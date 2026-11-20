@@ -595,10 +595,11 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     mic.setMusic(v && state.status === 'playing' && ctl.broadcastable());
     window.dispatchEvent(new CustomEvent('freakdj:broadcast', { detail: { enabled: v } }));
     hudOptions.onBroadcast?.(v);
+    if (state.loaded?.yt && state.status !== 'idle') ctl.switchYt(state.loaded);
     if (!v) return;
     if (!mic.senderCount()) toast('Включи голосовой чат в игре — музыка пойдёт в него');
     else if (mic.voiceMode() !== 'ptt') toast('Открытый микрофон: игра глушит паузы речи. Для музыки поставь в голосе режим «по кнопке»');
-    else if (state.loaded && !ctl.broadcastable()) toast('Этот трек не транслируется — подойдут гитарные пластинки и свои файлы', true);
+    else if (state.loaded && !state.loaded.yt && !ctl.broadcastable()) toast('Этот трек не транслируется: ссылки на чужие сайты браузер захватить не даёт', true);
   }
   function setVoice(v) {
     if (!mic.available()) { toast('Нужен скрипт Tampermonkey 1.3+', true); return; }
@@ -897,10 +898,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 
     // YouTube: обычный embed-плеер, управляем через postMessage (без загрузки скриптов YouTube в страницу).
     const ytPost = (func, args = []) => yt?.frame.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
-    function ytStart(t) {
+    function ytStart(t, startSec = 0) {
       const frame = document.createElement('iframe');
       frame.allow = 'autoplay; encrypted-media';
-      frame.src = `https://www.youtube.com/embed/${t.yt}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&rel=0&iv_load_policy=3&origin=${encodeURIComponent(location.origin)}`;
+      frame.src = `https://www.youtube.com/embed/${t.yt}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&rel=0&iv_load_policy=3${startSec > 1 ? `&start=${Math.floor(startSec)}` : ''}&origin=${encodeURIComponent(location.origin)}`;
       $('.screen').replaceChildren(frame);
       yt = { frame, track: t, time: 0, at: 0, dur: 0, ready: false };
       const hello = () => {
@@ -959,8 +960,98 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       new Function('__dj', code.replace(/^\(async\b/m, '__dj.p=(async'))(holder);
       return holder.p;
     }
+    // ---- YouTube в трансляцию ----
+    // Звук iframe YouTube странице недоступен (чужой источник), поэтому для трансляции два других пути:
+    // 1) в клиенте FreakRating — его радио: yt-dlp + ffmpeg → PCM 48 кГц кусками (как радио бота, aiMic.radioFeed);
+    // 2) в браузере — отдельное окно YouTube и штатный захват звука вкладки (getDisplayMedia), один раз за сессию.
+    let ytMode = null;   // 'iframe' | 'client' | 'popup'
+    const client = () => (typeof window.freakClient?.radioStart === 'function' ? window.freakClient : null);
+    let radioAt = 0, radioGain = null, radioPending = false, radioHooked = false;
+    const radioNodes = new Set();
+    function radioFeed(bytes) {
+      const c = graphCtx(), frames = Math.floor((bytes?.byteLength || 0) / 4);
+      if (!frames) return;
+      const view = new DataView(bytes.buffer, bytes.byteOffset, frames * 4), buf = c.createBuffer(2, frames, 48000);
+      const l = buf.getChannelData(0), r = buf.getChannelData(1);
+      for (let i = 0; i < frames; i++) { l[i] = view.getInt16(i * 4, true) / 32768; r[i] = view.getInt16(i * 4 + 2, true) / 32768; }
+      if (!radioGain) { radioGain = c.createGain(); radioGain.gain.value = state.volume; radioGain.connect(c.destination); radioGain.connect(mic.input()); }
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      src.connect(radioGain);
+      const at = Math.max(radioAt, c.currentTime + 0.2);
+      src.start(at);
+      radioAt = at + buf.duration;
+      radioNodes.add(src);
+      src.onended = () => { radioNodes.delete(src); src.disconnect(); };
+    }
+    function radioReset() { for (const n of radioNodes) { try { n.stop(); } catch { /* уже закончился */ } } radioNodes.clear(); radioAt = 0; }
+    function hookRadio(fc) {
+      if (radioHooked) return;
+      radioHooked = true;
+      fc.onRadioPcm?.(chunk => { if (ytMode === 'client' && current?.yt) radioFeed(chunk); });
+      fc.onRadioState?.(st => {
+        if (ytMode !== 'client' || !current?.yt || !st) return;
+        if (st.error) { current = null; radioReset(); toast(String(st.error), true); setStatus('idle'); return; }
+        if (st.title && current.titleAuto) { current.title = st.title; delete current.titleAuto; persist(); layout(); }
+        if (st.playing && !st.paused) { radioPending = false; startedAt ||= performance.now(); setStatus('playing'); }
+        else if (st.paused) setStatus('paused');
+        else if (!radioPending && !st.starting) { current = null; radioReset(); setStatus('idle'); }
+      });
+    }
+    async function clientYt(fc, t) {
+      hookRadio(fc);
+      radioPending = true;
+      const res = await fc.radioStart(`https://www.youtube.com/watch?v=${t.yt}`);
+      if (!res?.ok) throw new Error(res?.error || 'Клиент FreakRating не запустил YouTube');
+    }
+    let ytWin = null, ytCap = null, ytCapNode = null, ytCapGain = null;
+    const capLive = () => !!ytCap?.getAudioTracks().some(a => a.readyState === 'live');
+    // Важно: getDisplayMedia и window.open вызываются синхронно, в том же клике, что и запуск трека.
+    function popupYt(t, startSec = 0) {
+      const url = `https://www.youtube.com/watch?v=${t.yt}${startSec > 1 ? `&t=${Math.floor(startSec)}s` : ''}`;
+      let capP = null;
+      if (!capLive()) {
+        if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('Браузер не умеет захватывать звук вкладки');
+        capP = navigator.mediaDevices.getDisplayMedia({ video: true, audio: { suppressLocalAudioPlayback: false }, preferCurrentTab: false, selfBrowserSurface: 'exclude', surfaceSwitching: 'exclude', systemAudio: 'exclude' });
+      }
+      if (!ytWin || ytWin.closed) ytWin = window.open(url, 'freakdj-youtube', 'popup,width=520,height=340');
+      else try { ytWin.location.href = url; } catch { ytWin = window.open(url, 'freakdj-youtube', 'popup,width=520,height=340'); }
+      if (capP) toast(ytWin ? 'Выбери вкладку YouTube и включи «Поделиться звуком»' : 'Окно заблокировано: открой видео в соседней вкладке и выбери её');
+      return (async () => {
+        if (capP) {
+          let stream;
+          try { stream = await capP; } catch { throw new Error('Захват звука YouTube отменён'); }
+          stream.getVideoTracks().forEach(v => v.stop());
+          const track = stream.getAudioTracks()[0];
+          if (!track) throw new Error('Звук не захвачен — включи «Поделиться звуком вкладки»');
+          ytCap = stream;
+          try { ytCapNode?.disconnect(); } catch { /* уже отключён */ }
+          const c = graphCtx();
+          ytCapNode = c.createMediaStreamSource(stream);
+          ytCapGain ||= c.createGain();
+          ytCapGain.gain.value = state.volume;
+          ytCapNode.connect(ytCapGain);
+          ytCapGain.connect(mic.input());   // в колонки не ведём: окно YouTube и так слышно
+          track.addEventListener('ended', () => {
+            ytCap = null;
+            if (current?.yt && ytMode === 'popup') { current = null; toast('Захват звука YouTube остановлен'); setStatus('idle'); }
+          });
+        }
+        if (current === t) { if (ytCapGain) ytCapGain.gain.value = state.volume; startedAt = performance.now() - startSec * 1000; setStatus('playing'); }
+      })();
+    }
+    function closePopup() {
+      try { ytWin?.close(); } catch { /* уже закрыто */ }
+      ytWin = null;
+      ytCap?.getTracks().forEach(x => x.stop());
+      ytCap = null;
+    }
     function halt() {
       pending = false;
+      if (ytMode === 'client') { try { client()?.radioStop(); } catch { /* клиент закрывается */ } radioReset(); }
+      if (ytCapGain) ytCapGain.gain.value = 0;   // захват вкладки молчит, пока YouTube не играет
+      if (ytMode === 'popup' && ytWin && !ytWin.closed) { try { ytWin.location.href = 'about:blank'; } catch { /* окно закрыто */ } }
+      ytMode = null;
       try { gp()?.stop(); } catch { /* ignore */ }
       for (const a of [plainAudio, graphAudio]) if (a?.getAttribute('src')) { a.onpause = null; a.pause(); a.removeAttribute('src'); a.load(); }
       audio = null;
@@ -993,12 +1084,19 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       else if (d.state === 'playing') { pending = false; startedAt = performance.now(); durationMs = d.durationMs || 0; loop = !!d.loop; setStatus('playing'); }
       else if (d.state === 'ended' && !pending) { current = null; setStatus('idle'); }
     });
-    async function play(t, mode = 'records') {
+    async function play(t, mode = 'records', { startSec = 0 } = {}) {
       halt();
       current = t; curMode = mode; durationMs = 0; startedAt = 0;
       setStatus('loading');
       try {
-        if (t.yt) { ytStart(t); return; }
+        if (t.yt) {
+          const fc = client();
+          if (fc) { ytMode = 'client'; await clientYt(fc, t); return; }
+          if (state.broadcast) { ytMode = 'popup'; await popupYt(t, startSec); return; }
+          ytMode = 'iframe';
+          ytStart(t, startSec);
+          return;
+        }
         if (t.type === 'digital') {
           const src = t.fileId ? await fileUrl(t.fileId) : t.url;
           if (current !== t) return;
@@ -1035,16 +1133,30 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       setOptions: o => { opts = o; },
       play,
       stop() { halt(); current = null; setStatus('idle'); },
-      broadcastable() { return !!current && curMode === 'records' && !current.yt && (current.type === 'guitar' || (!!audio && audio === graphAudio)); },
+      broadcastable() {
+        if (!current || curMode !== 'records') return false;
+        if (current.yt) return ytMode === 'client' || (ytMode === 'popup' && capLive());
+        return current.type === 'guitar' || (!!audio && audio === graphAudio);
+      },
+      // Включили/выключили трансляцию во время YouTube-трека в браузере: перезапускаем его в нужном режиме с той же секунды.
+      switchYt(t) {
+        if (!t?.yt || client() || current !== t) return;
+        const sec = this.elapsed() / 1000;
+        if (!state.broadcast) closePopup();
+        play(t, 'records', { startSec: sec });
+      },
       togglePause() { if (current?.type === 'digital' && audio) audio.paused ? audio.play() : audio.pause(); },
       setVolume(v) {
         if (audio && audio === plainAudio) audio.volume = v;
         if (graphGain) graphGain.gain.value = v;
         if (synth) synth.out.gain.setTargetAtTime(v, actx.currentTime, 0.03);
+        if (radioGain) radioGain.gain.value = v;
+        if (ytCapGain && ytMode === 'popup') ytCapGain.gain.value = v;
         ytPost('setVolume', [Math.round(v * 100)]);
       },
       forgetFile(id) { const u = fileUrls.get(id); if (u) URL.revokeObjectURL(u); fileUrls.delete(id); },
       elapsed() {
+        if (current?.yt && ytMode !== 'iframe') return startedAt ? performance.now() - startedAt : 0;
         if (current?.yt) return yt ? (yt.time + (state.status === 'playing' && yt.at ? (performance.now() - yt.at) / 1000 : 0)) * 1000 : 0;
         if (current?.type === 'digital' && audio) return audio.currentTime * 1000;
         if (synth) return Math.max(0, (actx.currentTime - synth.t0) * 1000);
