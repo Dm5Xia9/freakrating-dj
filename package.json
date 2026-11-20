@@ -1,0 +1,11 @@
+{
+  "name": "freakrating-dj",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "convert": "node src/convert-gp.mjs"
+  },
+  "dependencies": {
+    "guitarpro-parser": "^2.0.0"
+  }
+}
