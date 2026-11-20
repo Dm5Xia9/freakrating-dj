@@ -141,6 +141,14 @@
     if (on) { px(7, 2, '#a974ff', 1, 3); px(9, 1, '#a974ff'); px(10, 2, '#a974ff', 1, 3); px(9, 5, '#a974ff'); }
     else drawPattern(px, 7, 2, ['#.#', '.#.', '#.#'], '#ff7a8a');
   });
+  // Микрофон: слышно ли твой голос.
+  const micSprite = on => sprite('mic-' + on, 7, 10, px => {
+    const c = on ? '#c9a6ff' : '#8d8a96';
+    px(2, 0, '#0b0a0f', 3, 6); px(2, 0, c, 3, 5); px(3, 1, '#ffffff', 1, 2);
+    [[1, 3], [1, 4], [5, 3], [5, 4], [2, 5], [3, 6], [4, 5]].forEach(([x, y]) => px(x, y, '#d9d5e2'));
+    px(3, 7, '#d9d5e2', 1, 2); px(1, 9, '#d9d5e2', 5, 1);
+    if (!on) for (let i = 0; i < 8; i++) px(i < 7 ? i : 6, 1 + i, '#ff7a8a');
+  });
   // Облачко с гитарой: «сядь за гитару».
   const bubbleSprite = () => sprite('bubble', 15, 14, px => {
     px(1, 0, '#0b0a0f', 13, 11); px(0, 1, '#0b0a0f', 15, 9);
@@ -229,6 +237,8 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .dj{--tx:#f1ecff;--mu:#a69fbd;--ac:#a974ff;--panel:rgba(20,16,30,.9);--box:rgba(16,12,24,.86);--line:rgba(196,178,236,.32);
   font:13px/1.25 'Pixelify Sans',ui-monospace,Menlo,monospace;color:var(--tx);user-select:none;-webkit-user-select:none;position:relative}
 .dj.digital{--ac:#3fd8f6}
+.dj{transition:opacity .15s,visibility .15s}
+.dj.typing{opacity:0;visibility:hidden;pointer-events:none}
 .panel{position:relative;display:flex;align-items:flex-end}
 .drawer{position:relative;flex:none;width:34px;height:96px;transition:width .5s cubic-bezier(.2,.9,.3,1)}
 .open .drawer{width:196px}
@@ -289,7 +299,9 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .mode.on{opacity:1;background:rgba(169,116,255,.18);box-shadow:inset 0 0 0 2px var(--ac)}
 .mode img{width:20px;height:20px}.mode .ic-sheet{width:16px;height:20px}
 .audio{display:flex;align-items:center;gap:6px;padding:3px 6px;background:var(--box);border:2px solid var(--line);border-radius:6px}
-.notes-mode .audio{display:none}
+.notes-mode .audio .spk,.notes-mode .audio .volr{display:none}
+.micb{width:14px;height:20px;flex:none}.micb img{width:14px;height:20px}
+.micb.off{filter:drop-shadow(0 0 3px #ff7a8a)}
 .spk{width:36px;height:21px;flex:none}.spk img{width:36px;height:21px}
 .spk.on{filter:drop-shadow(0 0 4px var(--ac))}
 .volr{-webkit-appearance:none;appearance:none;width:84px;height:16px;margin:0;background:transparent;cursor:pointer;--p:80%}
@@ -357,7 +369,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   // ---------- Состояние ----------
   const saved = load();
   const state = {
-    all: [], tracks: [], sel: 0, mode: 'records', notesPref: saved.mode === 'notes', seated: false, broadcast: !!saved.broadcast, custom: Array.isArray(saved.custom) ? saved.custom : [],
+    all: [], tracks: [], sel: 0, mode: 'records', notesPref: saved.mode === 'notes', seated: false, broadcast: !!saved.broadcast, voice: saved.voice !== false, custom: Array.isArray(saved.custom) ? saved.custom : [],
     loaded: null,   // пластинка на проигрывателе
     flying: false,
     status: 'idle', // idle | loading | waiting | playing | paused
@@ -365,7 +377,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     volume: Number.isFinite(saved.volume) ? saved.volume : 0.8,
   };
   let hudOptions = {};
-  const persist = () => save({ selId: state.tracks[state.sel]?.id, mode: state.notesPref ? 'notes' : 'records', broadcast: state.broadcast, volume: state.volume, custom: state.custom.map(({ el, _score, ...t }) => t) });
+  const persist = () => save({ selId: state.tracks[state.sel]?.id, mode: state.notesPref ? 'notes' : 'records', broadcast: state.broadcast, voice: state.voice, volume: state.volume, custom: state.custom.map(({ el, _score, ...t }) => t) });
 
   // ---------- DOM ----------
   const host = document.createElement('freakrating-dj');
@@ -388,7 +400,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       <div class="tlabel"></div><img class="bubble" alt=""><img class="keycap" alt=""><div class="screen"></div><div class="notes"></div></div>
     <div class="ctrls">
       <div class="modes"><button class="mode" data-mode="records" title="Пластинки"><img class="ic-vinyl" alt=""></button><button class="mode" data-mode="notes" title="Ноты — играть на гитаре в игре"><img class="ic-sheet" alt=""></button></div>
-      <div class="audio"><button class="spk" title="Трансляция в войс-чат"><img alt=""></button><input class="volr" type="range" min="0" max="100" step="1" aria-label="Громкость"></div>
+      <div class="audio"><button class="spk" title="Трансляция в войс-чат"><img alt=""></button><button class="micb" title="Твой микрофон"><img alt=""></button><input class="volr" type="range" min="0" max="100" step="1" aria-label="Громкость"></div>
     </div>
     <div class="toast"></div>
   </section>
@@ -560,6 +572,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     spk.classList.toggle('on', state.broadcast);
     spk.querySelector('img').src = speakerSprite(state.broadcast);
     spk.title = state.broadcast ? 'Трансляция в войс-чат: вкл' : 'Трансляция в войс-чат: выкл';
+    const mb = $('.micb');
+    mb.classList.toggle('off', !state.voice);
+    mb.querySelector('img').src = micSprite(state.voice);
+    mb.title = state.voice ? 'Твой микрофон: слышно' : 'Твой микрофон: выключен — другие слышат только музыку';
     volr.value = Math.round(state.volume * 100);
     volr.style.setProperty('--p', `${volr.value}%`);
   }
@@ -584,6 +600,15 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     else if (mic.voiceMode() !== 'ptt') toast('Открытый микрофон: игра глушит паузы речи. Для музыки поставь в голосе режим «по кнопке»');
     else if (state.loaded && !ctl.broadcastable()) toast('Этот трек не транслируется — подойдут гитарные пластинки и свои файлы', true);
   }
+  function setVoice(v) {
+    if (!mic.available()) { toast('Нужен скрипт Tampermonkey 1.3+', true); return; }
+    mic.setVoice(v);
+    state.voice = v;
+    renderControls();
+    persist();
+    sfx(v ? 'add' : 'select');
+    toast(v ? 'Твой микрофон снова слышно' : 'Микрофон выключен — тебя не слышно, музыка идёт');
+  }
   // Режим нот доступен только за гитарой; встал из-за гитары — снова пластинки.
   function setSeated(v) {
     if (state.seated === v) return;
@@ -594,6 +619,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   }
   const seatTimer = setInterval(() => {
     try { setSeated(!!(hudOptions.isAtGuitar ? hudOptions.isAtGuitar() : window.guitarPlayer?.seated?.())); } catch { /* игра ещё грузится */ }
+    dj.classList.toggle('typing', typingInGame());   // запасной путь, если focusin не пришёл
   }, 400);
   function setMode(m, { pref = true } = {}) {
     if (m === 'notes' && !state.seated) return;
@@ -675,7 +701,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     return sharedCtx;
   };
   const mic = (() => {
-    let dest = null, bus = null, out = null, gameSrc = null, active = false, release = null, releaseTimer = 0, holds = 0, keepTimer = 0;
+    let dest = null, bus = null, out = null, gameSrc = null, active = false, voice = true, mapped = false, release = null, releaseTimer = 0, holds = 0, keepTimer = 0;
     const hooks = () => hudOptions.hooks || window.FreakDJHooks;
     function ensure() {
       const c = graphCtx();
@@ -687,7 +713,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       const c = ensure();
       try { gameSrc?.disconnect(); } catch { /* уже отключён */ }
       gameSrc = null;
-      if (track && track.readyState !== 'ended') { gameSrc = c.createMediaStreamSource(new MediaStream([track])); gameSrc.connect(dest); }
+      if (track && track.readyState !== 'ended') { gameSrc = c.createMediaStreamSource(new MediaStream([track])); if (voice) gameSrc.connect(dest); }
       return out;
     }
     function tune(sender, tries = 0) {
@@ -719,27 +745,34 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       voiceMode: () => voiceSettings().mode || 'open',
       senderCount() { let n = 0; for (const [, t] of hooks()?.senders || []) if (t) n++; return n; },
       sending() { for (const [sender] of hooks()?.senders || []) if (out && sender.track === out) return true; return false; },
-      setActive(on) {
+      // Две ручки: active — музыка в войс-чат (громкоговоритель), voice — слышно ли твой микрофон.
+      // Подменяем дорожку отправителя, только если нужна хотя бы одна из них (музыка или «без микрофона»).
+      apply() {
         const h = hooks();
         if (!h?.rawReplace) return false;
         ensure();
-        if (on === active) return true;
-        active = on;
-        if (on) {
-          bus.connect(dest);
+        try { bus.disconnect(); } catch { /* не был подключён */ }
+        if (active) bus.connect(dest);
+        if (gameSrc) { try { gameSrc.disconnect(); } catch { /* уже отключён */ } if (voice) gameSrc.connect(dest); }
+        const need = active || !voice;
+        if (need && !mapped) {
+          mapped = true;
           h.map = t => mix(t);
-          h.onSender = sender => tune(sender);
-          for (const [sender, t] of h.senders) if (t && sender.track !== out) { Promise.resolve(h.rawReplace(sender, mix(t))).catch(() => {}); tune(sender); }
-        } else {
+          h.onSender = sender => { if (active) tune(sender); };
+          for (const [sender, t] of h.senders) if (t && sender.track !== out) Promise.resolve(h.rawReplace(sender, mix(t))).catch(() => {});
+        } else if (!need && mapped) {
+          mapped = false;
           h.map = null; h.onSender = null;
-          try { bus.disconnect(dest); } catch { /* не был подключён */ }
           for (const [sender, t] of h.senders) if (sender.track === out) Promise.resolve(h.rawReplace(sender, t)).catch(() => {});
           try { gameSrc?.disconnect(); } catch { /* уже отключён */ }
           gameSrc = null;
-          this.setMusic(false, true);
         }
+        if (active) for (const [sender] of h.senders) tune(sender);
+        else this.setMusic(false, true);
         return true;
       },
+      setActive(on) { active = !!on; return this.apply(); },
+      setVoice(on) { voice = !!on; return this.apply(); },
       setMusic(playing, now = false) {
         clearTimeout(releaseTimer);
         if (playing && active) { release ||= holdPtt(); return; }
@@ -1160,6 +1193,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     if (target.matches('.attach')) return fileInput.click();
     if (target.matches('.mode')) return setMode(target.dataset.mode);
     if (target.matches('.spk')) return setBroadcast(!state.broadcast);
+    if (target.matches('.micb')) return setVoice(!state.voice);
     const i = target.matches('.rec') ? Number(target.dataset.i) : -1;
     if (i < 0 || !state.tracks[i]) return;
     if (i !== state.sel) return select(i);
@@ -1237,6 +1271,14 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     if (!addFromText(text)) openAdd(text.trim());
   };
   document.addEventListener('paste', onPaste);
+  // Игрок пишет в чат игры (Enter → поле чата в фокусе) — прячем весь HUD. Наше поле ввода — внутри host, его не считаем.
+  const typingInGame = () => {
+    const a = document.activeElement;
+    return !!a && a !== host && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+  };
+  const onFocusChange = () => setTimeout(() => dj.classList.toggle('typing', typingInGame()), 0);
+  document.addEventListener('focusin', onFocusChange, true);
+  document.addEventListener('focusout', onFocusChange, true);
   const mount = () => {
     const parent = document.fullscreenElement instanceof HTMLElement ? document.fullscreenElement : document.body;
     if (parent && host.parentElement !== parent) parent.append(host);
@@ -1275,6 +1317,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       ctl.setOptions(options);
       hudOptions = options;
       if (state.broadcast && !mic.setActive(true)) state.broadcast = false;
+      if (!state.voice && !mic.setVoice(false)) state.voice = true;
       mount();
       renderDeck();
       let lib = [];
@@ -1299,6 +1342,8 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       clearInterval(seatTimer);
       clearInterval(noteTimer);
       document.removeEventListener('paste', onPaste);
+      document.removeEventListener('focusin', onFocusChange, true);
+      document.removeEventListener('focusout', onFocusChange, true);
       document.removeEventListener('mousemove', onCorner);
       window.removeEventListener('pointerlockchange', onLockChange, true);
       window.removeEventListener('keydown', onHotkey, true);
