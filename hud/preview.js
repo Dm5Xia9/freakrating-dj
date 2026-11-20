@@ -47,8 +47,10 @@ const libs = import.meta.glob('../lib/play-*.js', { query: '?raw', import: 'defa
 await import('../src/dj-hud.js');
 window.FreakDJ.start({
   listSongs: async () => Object.keys(libs).map(url => ({ file: url.split('/').pop(), url })),
-  loadText: url => libs[url](),
-  loadConverter: () => import('../src/web/convert.js').then(m => m.convertGp),
+  loadText: url => (libs[url] ? libs[url]() : fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })),
+  loadBinary: url => fetch(url).then(r => r.arrayBuffer()),
+  libBase: '/freakrating-dj/lib/',
+  loadConverter: () => import('../src/web/convert.js'),
   extraTracks: [{ type: 'digital', title: 'chill vibes.wav', url: demoWav() }],
 });
 

@@ -1,6 +1,6 @@
 // FreakRating DJ — HUD проигрывателя: ящик с пластинками + проигрыватель в стиле Minecraft.
 // Обычный скрипт без import/export: userscript выполняет его через new Function, превью — через import.
-// API: window.FreakDJ.start({ listSongs, loadText, loadConverter, extraTracks }) → { addTrack, destroy }.
+// API: window.FreakDJ.start({ listSongs, loadText, loadBinary, libBase, loadConverter, extraTracks }) → { addTrack, destroy }.
 (() => {
   'use strict';
   window.FreakDJ?.destroy?.();
@@ -377,7 +377,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     volume: Number.isFinite(saved.volume) ? saved.volume : 0.8,
   };
   let hudOptions = {};
-  const persist = () => save({ selId: state.tracks[state.sel]?.id, mode: state.notesPref ? 'notes' : 'records', broadcast: state.broadcast, voice: state.voice, volume: state.volume, custom: state.custom.map(({ el, _score, ...t }) => t) });
+  const persist = () => save({ selId: state.tracks[state.sel]?.id, mode: state.notesPref ? 'notes' : 'records', broadcast: state.broadcast, voice: state.voice, volume: state.volume, custom: state.custom.map(({ el, _score, _song, _parts, ...t }) => t) });
 
   // ---------- DOM ----------
   const host = document.createElement('freakrating-dj');
@@ -960,6 +960,194 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       new Function('__dj', code.replace(/^\(async\b/m, '__dj.p=(async'))(holder);
       return holder.p;
     }
+    // ---- Оригинальный GP настоящими инструментами ----
+    // Все партии песни (songEvents из конвертера) играются семплами живых инструментов MusyngKite
+    // (gleitz/midi-js-soundfonts — статичные файлы со встроенными mp3, кешируются в IndexedDB), ударные — семплами
+    // акустической установки (Tone.js audio). Синтезаторные программы из GP заменяются живыми. Нет GP — прежний синтез.
+    const SF_BASE = 'https://gleitz.github.io/midi-js-soundfonts/MusyngKite/', SF_CACHE = 'sfm:';
+    // Инструменты — как в файле. Исключения: партия вокала (мелодия певца, в табах её пишут синт-лидом) звучит
+    // мягким голосом и тише; звуковые эффекты (дыхание, шум ладов, прибой…) не играем (-1).
+    const VOCAL = /vocal|voice|vox|sing|melod|вокал|голос|мелоди/i, SYNTH = /synth|key|клав|синт/i;
+    // Синт-лид без «synth/keys» в названии в табах почти всегда — мелодия вокала.
+    const isVocal = (p, name = '') => VOCAL.test(name) || ([80, 81, 85].includes(p) && !SYNTH.test(name));
+    const realProgram = (p, name = '') => {
+      if (isVocal(p, name)) return 53;
+      if (p >= 119) return -1;
+      return p;
+    };
+    const DRUM_BASE = 'https://tonejs.github.io/audio/';
+    // Ключ GM-ударных → семпл, скорость (высота), длина звучания, громкость.
+    const DRUM_KIT = {
+      kick: 'drum-samples/acoustic-kit/kick.mp3', snare: 'drum-samples/acoustic-kit/snare.mp3', hihat: 'drum-samples/acoustic-kit/hihat.mp3',
+      tom1: 'drum-samples/acoustic-kit/tom1.mp3', tom2: 'drum-samples/acoustic-kit/tom2.mp3', tom3: 'drum-samples/acoustic-kit/tom3.mp3',
+      crash: 'berklee/crash_cymbal1.mp3', ride: 'berklee/cymbal1.mp3', china: 'berklee/china_cymbal1.mp3',
+    };
+    const DRUM_MAP = {
+      35: ['kick', 1, 0.6, 1], 36: ['kick', 1, 0.6, 1], 38: ['snare', 1, 0.5, 0.9], 40: ['snare', 1.05, 0.5, 0.9],
+      37: ['snare', 1.4, 0.12, 0.35], 39: ['snare', 1.5, 0.2, 0.5], 41: ['tom3', 0.9, 0.7, 0.85], 43: ['tom3', 1, 0.7, 0.85],
+      45: ['tom2', 1, 0.6, 0.85], 47: ['tom2', 1.08, 0.6, 0.85], 48: ['tom1', 1, 0.5, 0.85], 50: ['tom1', 1.1, 0.5, 0.85],
+      42: ['hihat', 1, 0.08, 0.45], 44: ['hihat', 1, 0.06, 0.35], 46: ['hihat', 0.95, 0.45, 0.45], 54: ['hihat', 1.4, 0.15, 0.3],
+      49: ['crash', 1, 2.5, 0.55], 57: ['crash', 1.06, 2.5, 0.55], 55: ['crash', 1.4, 1.2, 0.4], 52: ['china', 1, 2, 0.5],
+      51: ['ride', 1, 1.5, 0.35], 59: ['ride', 1.05, 1.5, 0.35], 53: ['ride', 1.3, 1, 0.4], 56: ['tom1', 2.2, 0.15, 0.4],
+    };
+    let drumKitP = null;
+    function drumKit() {
+      drumKitP ||= (async () => {
+        if (!opts.loadBinary) throw new Error('нет загрузки семплов');
+        const c = graphCtx(), kit = {};
+        await Promise.all(Object.entries(DRUM_KIT).map(async ([k, path]) => {
+          let bytes = await idb.get(`dr:${path}`).catch(() => null);
+          if (!(bytes instanceof ArrayBuffer)) { bytes = await opts.loadBinary(DRUM_BASE + path); idb.put(`dr:${path}`, bytes.slice(0)).catch(() => {}); }
+          kit[k] = await c.decodeAudioData(bytes.slice(0));
+        }));
+        return kit;
+      })().catch(e => { drumKitP = null; throw e; });
+      return drumKitP;
+    }
+    const SF_NOTE = /"([A-G]b?)(-?\d)":\s*"data:audio\/mp3;base64,([^"]+)"/g, SF_SEMI = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
+    let gmNamesP = null, manifestP = null, gpp = null, noiseBuf = null;
+    const instruments = new Map();
+    const gmName = async program => {
+      gmNamesP ||= opts.loadText(`${SF_BASE}names.json`).then(JSON.parse).catch(e => { gmNamesP = null; throw e; });
+      return (await gmNamesP)[program] || 'acoustic_guitar_steel';
+    };
+    function instrument(name) {
+      if (!instruments.has(name)) instruments.set(name, (async () => {
+        let text = await idb.get(SF_CACHE + name).catch(() => null);
+        if (typeof text !== 'string') { text = await opts.loadText(`${SF_BASE}${name}-mp3.js`); idb.put(SF_CACHE + name, text).catch(() => {}); }
+        const notes = new Map();
+        for (const m of text.matchAll(SF_NOTE)) notes.set(12 * (Number(m[2]) + 1) + SF_SEMI[m[1]], m[3]);
+        if (!notes.size) throw new Error(`пустой банк ${name}`);
+        return { notes, buffers: new Map() };
+      })().catch(e => { instruments.delete(name); throw e; }));
+      return instruments.get(name);
+    }
+    async function sampleFor(inst, midi) {
+      let key = null, best = Infinity;
+      for (const k of inst.notes.keys()) { const d = Math.abs(k - midi); if (d < best) { best = d; key = k; } }
+      if (!inst.buffers.has(key)) {
+        const bin = atob(inst.notes.get(key)), bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        inst.buffers.set(key, graphCtx().decodeAudioData(bytes.buffer));
+      }
+      return { key, buffer: await inst.buffers.get(key) };
+    }
+    const libManifest = () => manifestP ||= Promise.resolve(opts.libBase ? opts.loadText(`${opts.libBase}sources.json`) : null)
+      .then(t => (t ? JSON.parse(t) : null)).catch(() => { manifestP = null; return null; });
+    async function loadSong(t) {
+      if (t._song) return t._song;
+      let bytes = null;
+      if (t.gpFileId) {
+        const blob = await idb.get(t.gpFileId).catch(() => null);
+        if (blob) bytes = new Uint8Array(await new Response(blob).arrayBuffer());
+      } else if (t.id?.startsWith('lib:') && opts.loadBinary) {
+        const path = (await libManifest())?.[t.id.slice(4)];
+        if (path) bytes = new Uint8Array(await opts.loadBinary(`${opts.libBase}${path}`));
+      }
+      if (!bytes) return null;
+      const conv = await getConverterModule();
+      if (typeof conv.songEvents !== 'function') return null;
+      t._song = conv.songEvents(bytes, t.title);
+      return t._song;
+    }
+    async function prepareSong(song) {
+      const parts = await Promise.all(song.tracks.map(async tr => {
+        if (tr.percussion) return { drums: true, vol: tr.vol ?? 0.66, pan: tr.pan ?? 0, notes: tr.notes, kit: await drumKit().catch(err => { console.warn('[FreakRating DJ] ударные', err); return null; }) };
+        const program = realProgram(tr.program ?? (tr.kind === 'stringed' ? 25 : 0), tr.name);
+        if (program < 0) return null;
+        const vocal = program === 53 && isVocal(tr.program, tr.name);
+        const inst = await instrument(await gmName(program));
+        const map = new Map();
+        await Promise.all([...new Set(tr.notes.map(n => n.m))].map(async m => map.set(m, await sampleFor(inst, m))));
+        return { notes: tr.notes, map, vol: (tr.vol ?? 0.66) * (vocal ? 0.6 : 1), pan: tr.pan ?? 0 };
+      }));
+      return parts.filter(Boolean);
+    }
+    function drum(c, out, at, key, v) {
+      if (!noiseBuf) { noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+      const env = (node, len, lvl) => { const g = c.createGain(); g.gain.setValueAtTime(lvl * v, at); g.gain.exponentialRampToValueAtTime(0.0001, at + len); node.connect(g).connect(out); return g; };
+      const tone = (f0, f1, len, lvl, type = 'sine') => { const o = c.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, at); o.frequency.exponentialRampToValueAtTime(f1, at + len); env(o, len, lvl); o.start(at); o.stop(at + len + 0.02); };
+      const hiss = (len, lvl, type, freq, q = 0.7) => { const n = c.createBufferSource(); n.buffer = noiseBuf; const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q; n.connect(f); env(f, len, lvl); n.start(at, Math.random() * 0.5); n.stop(at + len + 0.02); };
+      if (key === 35 || key === 36) tone(150, 45, 0.35, 1);                                        // бочка
+      else if (key === 38 || key === 40) { tone(220, 140, 0.12, 0.5, 'triangle'); hiss(0.18, 0.6, 'highpass', 1500); } // малый
+      else if (key === 37) hiss(0.05, 0.5, 'bandpass', 3000, 2);                                    // римшот
+      else if (key === 39) hiss(0.15, 0.6, 'bandpass', 1500, 1);                                    // хлопок
+      else if ([41, 43, 45, 47, 48, 50].includes(key)) { const f = 80 + (key - 41) * 12; tone(f * 1.6, f, 0.3, 0.8); } // томы
+      else if (key === 42 || key === 44) hiss(0.05, 0.35, 'highpass', 7000);                       // хэт закрытый
+      else if (key === 46) hiss(0.3, 0.3, 'highpass', 7000);                                        // хэт открытый
+      else if ([49, 52, 55, 57].includes(key)) hiss(1.2, 0.35, 'highpass', 5000);                   // тарелки
+      else if ([51, 53, 59].includes(key)) hiss(0.6, 0.2, 'bandpass', 6000, 1.5);                   // райд
+      else hiss(0.08, 0.25, 'bandpass', 2500, 1);
+    }
+    function gpStart(t, song, parts) {
+      actx = graphCtx();
+      const out = actx.createGain(), comp = actx.createDynamicsCompressor();
+      out.gain.value = state.volume;
+      out.connect(comp).connect(actx.destination);
+      comp.connect(mic.input());
+      const list = [];
+      for (const p of parts) {
+        // Баланс оригинала из микшера GP; семплы ударных громче семплов инструментов — ведём их тише.
+        const tg = actx.createGain(), panner = actx.createStereoPanner?.();
+        tg.gain.value = (p.drums ? 0.32 : 0.8) * (p.vol ?? 0.66);
+        if (panner) { panner.pan.value = Math.max(-1, Math.min(1, p.pan || 0)); tg.connect(panner).connect(out); } else tg.connect(out);
+        for (const n of p.notes) list.push({ n, p, tg });
+      }
+      list.sort((a, b) => a.n.s - b.n.s);
+      const s = { out, comp, list, i: 0, t0: actx.currentTime + 0.15, end: song.durationMs / 1000, track: t };
+      s.timer = setInterval(() => gpPump(s), 60);
+      gpp = s;
+      durationMs = song.durationMs;
+      gpPump(s);
+      setStatus('playing');
+    }
+    function gpNote(s, { n, p, tg }) {
+      const at = Math.max(actx.currentTime, s.t0 + n.s / 1000);
+      if (p.drums) {
+        const d = p.kit && DRUM_MAP[n.m], buf = d && p.kit[d[0]];
+        if (!buf) return drum(actx, tg, at, n.m, n.v);   // нет семпла — синтезированный удар
+        const src = actx.createBufferSource(), g = actx.createGain();
+        src.buffer = buf;
+        src.playbackRate.value = d[1];
+        g.gain.setValueAtTime(n.v * d[3], at);
+        g.gain.setTargetAtTime(0, at + d[2], 0.06);
+        src.connect(g).connect(tg);
+        src.start(at);
+        src.stop(at + d[2] + 0.5);
+        src.onended = () => g.disconnect();
+        return;
+      }
+      const smp = p.map.get(n.m);
+      if (!smp?.buffer) return;
+      const src = actx.createBufferSource(), g = actx.createGain();
+      src.buffer = smp.buffer;
+      src.playbackRate.value = 2 ** ((n.m - smp.key) / 12);
+      let end = s.t0 + n.e / 1000;
+      if (n.lr) end += 1.2;
+      if (n.pm) end = Math.min(end, at + 0.18);
+      if (n.d) end = at + 0.05;
+      g.gain.setValueAtTime(n.v * (n.d ? 0.4 : 1), at);
+      g.gain.setTargetAtTime(0, end, n.pm || n.d ? 0.03 : 0.12);
+      src.connect(g).connect(tg);
+      src.start(at);
+      src.stop(end + 0.8);
+      src.onended = () => g.disconnect();
+    }
+    function gpPump(s) {
+      if (gpp !== s) return;
+      const horizon = actx.currentTime + 0.35;
+      while (s.i < s.list.length && s.t0 + s.list[s.i].n.s / 1000 < horizon) gpNote(s, s.list[s.i++]);
+      if (s.i >= s.list.length && actx.currentTime > s.t0 + s.end + 1) { gpStop(); current = null; setStatus('idle'); }
+    }
+    function gpStop() {
+      const s = gpp;
+      if (!s) return;
+      gpp = null;
+      clearInterval(s.timer);
+      s.out.gain.setTargetAtTime(0, actx.currentTime, 0.03);
+      setTimeout(() => { try { s.out.disconnect(); s.comp.disconnect(); } catch { /* уже отключено */ } }, 300);
+    }
+
     // ---- YouTube в трансляцию ----
     // Звук iframe YouTube странице недоступен (чужой источник), поэтому для трансляции два других пути:
     // 1) в клиенте FreakRating — его радио: yt-dlp + ffmpeg → PCM 48 кГц кусками (как радио бота, aiMic.radioFeed);
@@ -1057,6 +1245,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       audio = null;
       ytStop();
       synthStop();
+      gpStop();
     }
     // Свои файлы (blob:) идут через Web Audio — их можно и слышать, и транслировать.
     // Чужие ссылки без CORS Web Audio не отдаст (будет тишина), поэтому они играют обычным <audio>.
@@ -1110,6 +1299,16 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
           return;
         }
         if (mode === 'records') {
+          let song = null;
+          try { song = await loadSong(t); } catch (err) { console.warn('[FreakRating DJ] GP', err); }
+          if (current !== t) return;
+          if (song) {
+            const slow = setTimeout(() => current === t && toast('Загружаю инструменты…'), 900);
+            try { t._parts ||= await prepareSong(song); } catch (err) { console.warn('[FreakRating DJ] инструменты', err); toast('Не загрузились инструменты — играю простым синтезом', true); }
+            finally { clearTimeout(slow); }
+            if (current !== t) return;
+            if (t._parts) { gpStart(t, song, t._parts); return; }
+          }
           const { score, bpm } = await getScore(t);
           if (current === t) synthStart(t, score, bpm);
           return;
@@ -1150,6 +1349,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         if (audio && audio === plainAudio) audio.volume = v;
         if (graphGain) graphGain.gain.value = v;
         if (synth) synth.out.gain.setTargetAtTime(v, actx.currentTime, 0.03);
+        if (gpp) gpp.out.gain.setTargetAtTime(v, actx.currentTime, 0.03);
         if (radioGain) radioGain.gain.value = v;
         if (ytCapGain && ytMode === 'popup') ytCapGain.gain.value = v;
         ytPost('setVolume', [Math.round(v * 100)]);
@@ -1160,6 +1360,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         if (current?.yt) return yt ? (yt.time + (state.status === 'playing' && yt.at ? (performance.now() - yt.at) / 1000 : 0)) * 1000 : 0;
         if (current?.type === 'digital' && audio) return audio.currentTime * 1000;
         if (synth) return Math.max(0, (actx.currentTime - synth.t0) * 1000);
+        if (gpp) return Math.max(0, (actx.currentTime - gpp.t0) * 1000);
         if (!startedAt) return 0;
         const e = performance.now() - startedAt;
         return loop && durationMs ? e % durationMs : Math.min(e, durationMs || e);
@@ -1238,9 +1439,12 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   // GP → конвертируем прямо в браузере; аудио → сохраняем в IndexedDB.
   const GP_RE = /\.(gp|gp3|gp4|gp5|gpx|gtp)$/i, AUDIO_RE = /\.(wav|mp3|ogg|oga|m4a|aac|flac|opus)$/i;
   let converterP = null;
-  const getConverter = () => converterP ||= Promise.resolve(hudOptions.loadConverter?.())
-    .then(fn => { if (typeof fn !== 'function') throw new Error('конвертер GP недоступен'); return fn; })
+  // loadConverter отдаёт модуль { convertGp, songEvents } (старый userscript — только функцию convertGp).
+  const getConverterModule = () => converterP ||= Promise.resolve(hudOptions.loadConverter?.())
+    .then(m => (typeof m === 'function' ? { convertGp: m } : m))
+    .then(m => { if (typeof m?.convertGp !== 'function') throw new Error('конвертер GP недоступен'); return m; })
     .catch(err => { converterP = null; throw err; });
+  const getConverter = () => getConverterModule().then(m => m.convertGp);
   async function addFiles(files) {
     setOpen(true);
     for (const file of files) {
@@ -1249,7 +1453,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
           toast(`Конвертирую ${file.name}…`);
           const convert = await getConverter();
           const data = convert(new Uint8Array(await file.arrayBuffer()), file.name, 8);
-          addTrack({ type: 'guitar', title: data.title, score: data.score, bpm: data.bpm });
+          // Сам GP тоже сохраняем: пластинка играет его всеми партиями настоящими инструментами.
+          const gpFileId = `g-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+          const saved = await idb.put(gpFileId, file).then(() => true, () => false);
+          addTrack({ type: 'guitar', title: data.title, score: data.score, bpm: data.bpm, ...(saved ? { gpFileId } : {}) });
         } else if (AUDIO_RE.test(file.name) || file.type.startsWith('audio/')) {
           const title = file.name.replace(/\.[^.]+$/, '');
           const fileId = `f-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -1279,6 +1486,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     if (state.loaded === t) ctl.stop();
     state.custom = state.custom.filter(c => c.id !== t.id);
     if (t.fileId) { ctl.forgetFile(t.fileId); idb.del(t.fileId).catch(() => {}); }
+    if (t.gpFileId) idb.del(t.gpFileId).catch(() => {});
     state.all = state.all.filter(x => x !== t);
     state.loaded = state.loaded === t ? null : state.loaded;
     refreshView();

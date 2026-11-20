@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FreakRating DJ player
 // @namespace    https://github.com/Dm5Xia9/freakrating-dj
-// @version      1.3.1
+// @version      1.4.0
 // @description  Record-crate HUD: choose a vinyl and play it on the in-game guitar.
 // @match        https://freakrating.lol/*
 // @match        https://www.freakrating.lol/*
@@ -11,6 +11,8 @@
 // @require      https://raw.githubusercontent.com/Dm5Xia9/freakrating-dj/main/src/voice-hook.js
 // @connect      raw.githubusercontent.com
 // @connect      api.github.com
+// @connect      gleitz.github.io
+// @connect      tonejs.github.io
 // @run-at       document-start
 // ==/UserScript==
 
@@ -22,6 +24,13 @@
   const HUD_URL = `${BASE}/src/dj-hud.js`;
   const CONVERTER_URL = `${BASE}/src/generated/gp-converter.js`;
   const API_URL = 'https://api.github.com/repos/Dm5Xia9/freakrating-dj/contents/lib';
+
+  function getBinary(url) {
+    return new Promise((resolve, reject) => GM_xmlhttpRequest({
+      method: 'GET', url, responseType: 'arraybuffer', onload: r => r.status >= 200 && r.status < 300 ? resolve(r.response) : reject(new Error(`HTTP ${r.status}: ${url}`)),
+      onerror: () => reject(new Error(`Не удалось загрузить ${url}`)),
+    }));
+  }
 
   function get(url) {
     return new Promise((resolve, reject) => GM_xmlhttpRequest({
@@ -45,9 +54,11 @@
     if (!dj?.start) throw new Error('HUD не загрузился');
     dj.start({
       loadText: get,
+      loadBinary: getBinary,
+      libBase: `${BASE}/lib/`,   // sources.json + исходные GP: пластинки играют их всеми партиями
       hooks: W.FreakDJHooks,
-      // Конвертер GP грузится только при первом приложенном файле.
-      loadConverter: async () => new Function(`${await get(CONVERTER_URL)}\nreturn FreakDJConvert;`)().convertGp,
+      // Конвертер GP грузится при первой нужде: { convertGp, songEvents }.
+      loadConverter: async () => new Function(`${await get(CONVERTER_URL)}\nreturn FreakDJConvert;`)(),
       async listSongs() {
         const files = JSON.parse(await get(API_URL)).filter(f => f.type === 'file' && /^play-.*\.js$/i.test(f.name));
         return files.map(f => ({ file: f.name, url: f.download_url }));

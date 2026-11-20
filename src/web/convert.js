@@ -1,14 +1,16 @@
 import { buildTimeline, parseGuitarPro, scheduleTrack } from 'guitarpro-parser';
 
+// Русские имена в старых GP лежат в cp1251, а парсер читает их как latin1 («Äîðîæêà» → «Дорожка»).
 const fixText = text => {
-  if (!/[ÐÑÃÂ]/.test(text)) return text;
+  const high = [...String(text)].filter(c => c >= '\u00c0' && c <= '\u00ff').length;
+  if (!text || high < Math.max(2, text.replace(/\s/g, '').length * 0.5)) return text;
   try { return new TextDecoder('windows-1251').decode(Uint8Array.from(text, c => c.charCodeAt(0))) || text; } catch { return text; }
 };
 const slugify = value => String(value).normalize('NFKD').replace(/[^\p{Letter}\p{Number}]+/gu, '-').replace(/^-|-$/g, '').toLowerCase() || 'song';
 const priority = name => /lead|melody|solo|vocal/i.test(name) ? 4 : /rhythm|guitar|acoustic/i.test(name) ? 3 : /bass/i.test(name) ? 1 : 2;
 
-export function convertGp(inputBytes, filename, maxVoices = 8) {
-  if (!Number.isInteger(maxVoices) || maxVoices < 1 || maxVoices > 8) throw new Error('Максимум нот должен быть от 1 до 8.');
+// Разбор с починкой типичных повреждений файлов (лишние байты в конце, отрицательные лады).
+function parseSong(inputBytes) {
   let bytes = inputBytes;
   let song;
   let repairedFrets = 0;
@@ -27,6 +29,43 @@ export function convertGp(inputBytes, filename, maxVoices = 8) {
     }
   }
   if (!song) throw new Error('Не удалось разобрать Guitar Pro файл.');
+  return { song, repairedFrets, trimmedBytes };
+}
+
+const DYNAMIC = { ppp: 0.3, pp: 0.4, p: 0.5, mp: 0.6, mf: 0.72, f: 0.82, ff: 0.92, fff: 1 };
+
+/**
+ * Все партии песни как есть — для проигрывания настоящими инструментами (HUD, режим пластинок).
+ * Повторы, темп, триоли и лиги уже применены парсером; громкость — из динамики, акцентов и ghost-нот.
+ */
+export function songEvents(inputBytes, filename = 'song.gp') {
+  const { song } = parseSong(inputBytes);
+  const timeline = buildTimeline(song);
+  let durationMs = 0;
+  const tracks = song.tracks.map(track => {
+    const percussion = track.kind === 'percussion';
+    const notes = [];
+    for (const ev of scheduleTrack(song, track, timeline)) {
+      const n = ev.note, s = Math.max(0, ev.startMs), e = Math.max(s + 20, ev.endMs);
+      let v = DYNAMIC[n.dynamic] ?? 0.72;
+      if (n.ghost) v *= 0.5;
+      if (n.accent) v = Math.min(1, v * (n.accent === 'heavyAccent' ? 1.25 : 1.12));
+      notes.push({ s: Math.round(s), e: Math.round(e), m: n.midi, v: Math.round(v * 100) / 100, ...(n.dead ? { d: 1 } : {}), ...(n.palmMute ? { pm: 1 } : {}), ...(n.letRing ? { lr: 1 } : {}) });
+      durationMs = Math.max(durationMs, e);
+    }
+    // Микшер GP3–GP5 (через патч парсера, 0–16): громкость → амплитуда по кривой MIDI, панорама → −1…1.
+    const midiVol = Number.isFinite(track.volume) ? Math.max(0, Math.min(127, track.volume * 8 - 1)) : 103;
+    const midiPan = Number.isFinite(track.balance) ? Math.max(0, Math.min(127, track.balance * 8 - 1)) : 63;
+    const vol = Math.round((midiVol / 127) ** 2 * 100) / 100, pan = Math.round(((midiPan - 63.5) / 63.5) * 100) / 100;
+    return { name: fixText(track.name || ''), program: track.program, percussion, kind: track.kind, vol, pan, notes };
+  }).filter(t => t.notes.length);
+  if (!tracks.length) throw new Error('В файле нет нот.');
+  return { title: fixText(song.info.title || filename.replace(/\.[^.]+$/, '')), durationMs: Math.round(durationMs), tracks };
+}
+
+export function convertGp(inputBytes, filename, maxVoices = 8) {
+  if (!Number.isInteger(maxVoices) || maxVoices < 1 || maxVoices > 8) throw new Error('Максимум нот должен быть от 1 до 8.');
+  const { song, repairedFrets, trimmedBytes } = parseSong(inputBytes);
   const fallbackTitle = filename.replace(/\.[^.]+$/, '');
   const title = fixText(song.info.title || fallbackTitle);
   const timeline = buildTimeline(song);
