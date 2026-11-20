@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+<defs>
+ <linearGradient id="bg" x2="0" y2="1"><stop stop-color="#12151c"/><stop offset="1" stop-color="#20232a"/></linearGradient>
+ <linearGradient id="panel" x2="1" y2="1"><stop stop-color="#252b35"/><stop offset="1" stop-color="#171c24"/></linearGradient>
+ <linearGradient id="disc" x2="1" y2="1"><stop stop-color="#e95b48"/><stop offset=".48" stop-color="#a43237"/><stop offset="1" stop-color="#612531"/></linearGradient>
+ <pattern id="grid" width="64" height="64" patternUnits="userSpaceOnUse"><path d="M64 0H0V64" fill="none" stroke="#ffffff" stroke-opacity=".035"/></pattern>
+ <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000" flood-opacity=".42"/></filter>
+ <filter id="glow"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<!-- background game scene -->
+<rect width="1600" height="1000" fill="url(#bg)"/><rect width="1600" height="1000" fill="url(#grid)"/>
+<g opacity=".34" fill="#343c47">
+ <path d="M0 640h180v-95h75v95h160v-120h90v120h140v-76h80v76h125v-145h90v145h130v-93h74v93h396v360H0z"/>
+ <path d="M0 770h220v-86h80v86h208v-140h96v140h160v-88h80v88h177v-132h95v132h240v-85h80v85h256v230H0z" opacity=".45"/>
+</g>
+<text x="72" y="82" fill="#a9b2c0" font-family="Arial,sans-serif" font-size="15" letter-spacing="4">IN-GAME HUD CONCEPT / 01</text>
+<text x="72" y="128" fill="#f2f2ed" font-family="Arial,sans-serif" font-size="31" font-weight="700">Музыка рядом. Игра — в фокусе.</text>
+<text x="72" y="164" fill="#8d96a3" font-family="Arial,sans-serif" font-size="17">Компактный музыкальный HUD, закреплённый справа по центру экрана</text>
+<!-- visual osu inspired rhythm accents -->
+<g transform="translate(110 350)" opacity=".44"><circle r="92" fill="none" stroke="#eb5a48" stroke-width="3"/><circle r="72" fill="none" stroke="#eb5a48" stroke-width="2"/><circle r="52" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2"/><circle r="24" fill="#eb5a48"/><path d="M-120 0H120M0-120V120" stroke="#fff" stroke-opacity=".28"/></g>
+<text x="72" y="520" fill="#e7e9eb" font-family="Arial,sans-serif" font-size="15" letter-spacing="2">РИТМ В МИРЕ</text>
+<text x="72" y="550" fill="#858e9d" font-family="Arial,sans-serif" font-size="14">Выбор пластинки → запуск → игра</text>
+<!-- HUD -->
+<g filter="url(#shadow)">
+ <rect x="1070" y="205" width="454" height="632" rx="20" fill="url(#panel)" stroke="#46505d" stroke-width="2"/>
+ <path d="M1090 206h414" stroke="#e75a47" stroke-width="3" opacity=".9"/>
+</g>
+<g font-family="Arial,sans-serif">
+ <text x="1100" y="246" fill="#f4f3ee" font-size="14" font-weight="700" letter-spacing="2">JUKEBOX</text>
+ <text x="1478" y="246" fill="#828b98" font-size="13" text-anchor="end">TAB  ·  скрыть</text>
+ <text x="1100" y="281" fill="#8993a1" font-size="13">БИБЛИОТЕКА</text>
+ <!-- category chips -->
+ <rect x="1100" y="296" width="106" height="31" rx="15" fill="#e45b49"/><text x="1153" y="317" fill="#fff" font-size="13" font-weight="700" text-anchor="middle">ГИТАРА  04</text>
+ <rect x="1214" y="296" width="145" height="31" rx="15" fill="#313944" stroke="#4a5664"/><text x="1286" y="317" fill="#c3cad2" font-size="13" text-anchor="middle">DIGITAL  08</text>
+ <text x="1478" y="317" fill="#84909e" font-size="12" text-anchor="end">+ ДОБАВИТЬ</text>
+ <!-- disc stack -->
+ <g transform="translate(1142 417)">
+  <ellipse cx="2" cy="18" rx="40" ry="47" fill="#0d1117" stroke="#54606e" stroke-width="2" transform="rotate(-14)"/>
+  <ellipse cx="2" cy="10" rx="40" ry="47" fill="#25303a" stroke="#687381" stroke-width="2" transform="rotate(-7)"/>
+  <ellipse cx="0" cy="0" rx="40" ry="47" fill="#344451" stroke="#88949d" stroke-width="2"/>
+  <ellipse cx="0" cy="0" rx="12" ry="14" fill="#d4b779"/><circle r="3" fill="#17212a"/>
+ </g>
+ <g transform="translate(1240 416)" filter="url(#glow)">
+  <circle r="56" fill="none" stroke="#f27a58" stroke-opacity=".23" stroke-width="2"/>
+  <ellipse rx="44" ry="53" fill="url(#disc)" stroke="#f49b79" stroke-width="2"/>
+  <ellipse rx="38" ry="47" fill="none" stroke="#301d27" stroke-opacity=".75"/><ellipse rx="31" ry="39" fill="none" stroke="#f6a17b" stroke-opacity=".37"/><ellipse rx="24" ry="30" fill="none" stroke="#301d27" stroke-opacity=".55"/>
+  <ellipse rx="17" ry="20" fill="#f2c879"/><circle r="4" fill="#542f37"/>
+ </g>
+ <g transform="translate(1338 417)"><ellipse rx="40" ry="47" fill="#273448" stroke="#7085b5" stroke-width="2"/><ellipse rx="29" ry="35" fill="none" stroke="#88a1dd" stroke-opacity=".65"/><ellipse rx="18" ry="22" fill="#7188c5"/><circle r="4" fill="#273448"/><path d="M-10 0h20M0-10v20" stroke="#d7e0ff" stroke-width="2"/></g>
+ <g transform="translate(1436 417)" opacity=".7"><ellipse rx="40" ry="47" fill="#293d35" stroke="#6d9a72" stroke-width="2"/><ellipse rx="24" ry="29" fill="#94b87b"/><circle r="4" fill="#293d35"/></g>
+ <text x="1142" y="486" fill="#8d98a6" font-size="11" text-anchor="middle">A</text><text x="1240" y="486" fill="#ffc28a" font-size="11" text-anchor="middle">ВЫБРАНА</text><text x="1338" y="486" fill="#8d98a6" font-size="11" text-anchor="middle">C</text><text x="1436" y="486" fill="#8d98a6" font-size="11" text-anchor="middle">D</text>
+ <!-- active track -->
+ <path d="M1100 511h394" stroke="#414b57"/>
+ <text x="1100" y="543" fill="#f0f0eb" font-size="16" font-weight="700">Where Is My Mind?</text>
+ <text x="1100" y="566" fill="#929daa" font-size="13">Pixies  ·  винил «Гитара»</text>
+ <rect x="1100" y="582" width="394" height="4" rx="2" fill="#424c57"/><rect x="1100" y="582" width="122" height="4" rx="2" fill="#ee684f"/><circle cx="1222" cy="584" r="5" fill="#ffe0ad"/>
+ <text x="1100" y="606" fill="#798493" font-size="11">1:24</text><text x="1494" y="606" fill="#798493" font-size="11" text-anchor="end">3:56</text>
+ <!-- playback controls -->
+ <g transform="translate(1297 644)"><circle r="22" fill="#e75b49"/><path d="M-4-9L10 0-4 9z" fill="#fff"/></g>
+ <path d="M1197 638l-9 7 9 7M1188 645h17" fill="none" stroke="#9ba6b1" stroke-width="2"/>
+ <path d="M1394 638l9 7-9 7M1386 645h17" fill="none" stroke="#9ba6b1" stroke-width="2"/>
+ <rect x="1444" y="635" width="42" height="20" rx="10" fill="#2f3944"/><text x="1465" y="649" fill="#bac3cd" font-size="10" text-anchor="middle">1×</text>
+ <!-- animated state strip -->
+ <rect x="1098" y="681" width="398" height="54" rx="10" fill="#202832" stroke="#3e4956"/>
+ <circle cx="1123" cy="708" r="11" fill="none" stroke="#e96c53" stroke-width="2"/><path d="M1123 701v7l5 3" fill="none" stroke="#ffd19b" stroke-width="2"/>
+ <text x="1146" y="704" fill="#e8e9e7" font-size="12" font-weight="700">ПЛАСТИНКА СТАРТУЕТ</text><text x="1146" y="721" fill="#8d98a6" font-size="11">наклон → вращение → игла опускается</text>
+ <!-- paste add -->
+ <rect x="1098" y="751" width="398" height="65" rx="10" fill="#1b222b" stroke="#3d4855"/>
+ <text x="1113" y="773" fill="#e1e4e6" font-size="12" font-weight="700">ДОБАВИТЬ ПО ССЫЛКЕ / ТЕКСТУ</text>
+ <text x="1113" y="798" fill="#727e8b" font-size="12">Вставь URL трека или текстовую команду…</text>
+ <rect x="1414" y="780" width="66" height="25" rx="6" fill="#e75b49"/><text x="1447" y="797" fill="#fff" font-size="11" font-weight="700" text-anchor="middle">ВСТАВИТЬ</text>
+</g>
+<!-- lower note -->
+<g font-family="Arial,sans-serif"><text x="72" y="896" fill="#e6e8e8" font-size="14" font-weight="700" letter-spacing="2">ПОВЕДЕНИЕ</text><text x="72" y="927" fill="#929ba7" font-size="14">Наведение — пластинка выдвигается · выбор — перелёт в проигрыватель · запуск — плавный разгон вращения</text><text x="72" y="956" fill="#929ba7" font-size="14">Digital — пиктограмма волны, источник Voice Chat · Guitar — табулатура / MIDI и отдельный визуальный стиль</text>
+<text x="1524" y="956" fill="#66717f" font-size="12" text-anchor="end">МАКЕТ СОСТОЯНИЯ PLAYING</text></g>
+</svg>

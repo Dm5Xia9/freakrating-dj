@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10121a" />
+    <title>FreakRating DJ — конвертер Guitar Pro</title>
+  </head>
+  <body>
+    <header class="topbar"><a class="brand" href="./"><span class="brand-mark">FR</span><span>FreakRating <b>DJ</b></span></a><span class="local-badge"><i></i> Работает локально</span></header>
+    <main class="layout">
+      <section class="hero">
+        <p class="eyebrow">ИНСТРУМЕНТ ДЛЯ ПЛЕЕРА</p>
+        <h1>Из Guitar Pro<br>в музыку для игры<span>.</span></h1>
+        <p class="intro">Преобразуй табулатуру в файл, который можно будет загрузить в плеер FreakRating DJ.</p>
+        <div class="privacy"><span class="privacy-icon">↗</span><span><strong>Файл не покидает устройство</strong><small>Вся конвертация выполняется прямо в браузере.</small></span></div>
+      </section>
+      <section class="card" aria-label="Конвертер Guitar Pro">
+        <div class="card-heading"><div><span class="step">ШАГ 1</span><h2>Добавь табулатуру</h2></div><span class="music-icon">♫</span></div>
+        <label class="drop" id="drop-zone" for="file-input">
+          <span class="upload-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v4h14v-4"/></svg></span>
+          <strong id="file-label">Перетащи файл сюда</strong>
+          <span class="drop-hint">или <em>выбери на устройстве</em></span>
+          <span class="formats">GP · GP3 · GP4 · GP5 · GPX · GTP</span>
+        <input id="file-input" type="file" accept=".gp,.gp3,.gp4,.gp5,.gpx,.gtp" />
+      </label>
+      <div class="card-heading second"><div><span class="step">ШАГ 2</span><h2>Настрой звучание</h2></div></div>
+      <div class="options"><label for="voices">Максимум одновременных нот</label><select id="voices"><option value="4">4 ноты</option><option value="6">6 нот</option><option value="8" selected>8 нот</option></select>div>
+      <button id="convert" disabled><span>Конвертировать в JSON</span><span class="arrow">↗</span></button>
+      <div class="status-line"><span class="status-dot"></span><p id="status" role="status">Сначала выбери файл.</p>
+      </div>
+      <div class="card-foot"><span>JSON</span><span>Результат готов для плеера</span></div>
+      </section>
+    </main>
+    <footer><span>FREAKRATING DJ</span><span>Guitar Pro converter <b>·</b> Бесплатно и приватно</span></footer>
+    <script type="module" src="/src/web/main.js"></script>
+  </body>
+</html>

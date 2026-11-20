@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FreakRating DJ — концепт HUD</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <main class="scene" aria-label="Концепт игрового HUD плеера">
+    <div class="scene-shade"></div>
+    <div class="concept-label"><span>FREAKRATING DJ</span><b>КОНЦЕПТ HUD · 01</b></div>
+    <section class="player" id="player">
+      <header class="topline"><span class="pixel-dot"></span><span>ПОХОДНЫЙ ПРОИГРЫВАТЕЛЬ</span><button class="minimize" aria-label="Свернуть">—</button></header>
+      <div class="mode-tabs"><button class="mode active" data-mode="guitar">♬ ГИТАРА <small>ТАБЫ</small></button><button class="mode" data-mode="digital">▣ ЦИФРА <small>ВОЙС-ЧАТ</small></button></div>
+      <div class="now-playing"><div class="now-art"><span class="vinyl mini"><i></i></span></div><div class="track-info"><span class="caption" id="kind">ИГРАЕТ НА ГИТАРЕ</span><strong id="title">Кино — Пачка сигарет</strong><span class="sub" id="artist">Гитарная пластинка · 4:18</span></div><span class="sound-wave" aria-label="Воспроизведение"><i></i><i></i><i></i><i></i></span></div>
+      <div class="turntable"><div class="record-stack" id="records">
+        <button class="record selected" data-title="Кино — Пачка сигарет" data-type="guitar" style="--disc:#d9ad53;--label:#253b2e;--angle:-9deg"><span class="vinyl"><i></i></span><span class="record-name">ПАЧКА<br>СИГАРЕТ</span><em>♫</em></button>
+        <button class="record" data-title="The Ink Spots — I Don't Want to Set the World on Fire" data-type="guitar" style="--disc:#bc6849;--label:#e0bd75;--angle:3deg"><span class="vinyl"><i></i></span><span class="record-name">WORLD<br>ON FIRE</span><em>♫</em></button>
+        <button class="record" data-title="Outkast — Hey Ya!" data-type="digital" style="--disc:#689673;--label:#d9d1a2;--angle:13deg"><span class="vinyl"><i></i></span><span class="record-name">HEY<br>YA!</span><em>▣</em></button>
+        <button class="add-record" id="open-add"><span>＋</span><small>ДОБАВИТЬ<br>ПО ТЕКСТУ</small></button>
+      </div><div class="shelf"><span>ПЛАСТИНКИ</span><span id="count">03 / 33</span></div></div>
+      <div class="controls"><button class="skip" id="prev" aria-label="Предыдущая">◀</button><button class="play" id="play"><span>Ⅱ</span><span id="play-label">Пауза</span></button><button class="skip" id="next" aria-label="Следующая">▶</button><button class="stop" id="stop">■ <span>Стоп</span></button></div>
+      <div class="progress"><span id="elapsed">1:24</span><div class="bar"><i id="progress"></i></div><span>4:18</span></div>
+      <div class="hint" id="hint">Кликни по пластинке, чтобы выбрать трек</div>
+      <div class="add-panel" id="add-panel" hidden><div class="add-head"><strong>Новая пластинка</strong><button id="close-add" aria-label="Закрыть">×</button></div><p>Вставь ссылку или текст трека</p><textarea id="track-text" placeholder="Название, ссылка или код трека…"></textarea><div class="add-actions"><button class="paste" id="paste">Вставить</button><button class="confirm" id="add">Добавить в стопку</button></div><div class="type-pick"><span>ТИП ПЛАСТИНКИ</span><button class="type selected" data-newtype="guitar">♫ Гитарная</button><button class="type" data-newtype="digital">▣ Цифровая</button></div></div>
+    </section>
+    <div class="phone-safe">ЗОНА ТЕЛЕФОНА<br><span>свободна</span></div>
+    <div class="concept-note"><span>01</span><p>Панель закреплена справа по центру:<br>не перекрывает телефон и хотбар.</p></div>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>

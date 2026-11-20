@@ -29,6 +29,8 @@
   const up = code => guitar.onKeyUp(code);
   const wait = ms => new Promise(resolve => setTimeout(resolve, Math.max(0, ms)));
   const active = new Map(), activeChords = new Map();
+  // События для HUD: waiting → playing({durationMs, loop}) → ended.
+  const emit = (state, extra = {}) => { try { window.dispatchEvent(new CustomEvent('guitarplayer', {detail:{state, ...extra}})); } catch {} };
   let serial = 0, octave = 1;
 
   const stop = () => {
@@ -85,9 +87,10 @@
     await Promise.resolve(previous).catch(() => {});
     window.__stopSong = false;
     const seek = serial;
+    emit('waiting');
     console.info('Жду гитару Forest: сними паузу и сядь за гитару.');
     while (!window.__stopSong && seek === serial && !(guitar = findGuitar())) await wait(300);
-    if (window.__stopSong || seek !== serial) return;
+    if (window.__stopSong || seek !== serial) { emit('ended'); return; }
     for (let i = 0; guitar.mode !== 'melody' && i < 3; i++) down('KeyR');
     if (guitar.mode !== 'melody') throw new Error('Не удалось включить режим мелодии гитары.');
     octave = guitar.octave;
@@ -114,6 +117,7 @@
       const aOff=a.kind==='off'||a.kind==='chordOff',bOff=b.kind==='off'||b.kind==='chordOff';
       return aOff===bOff?0:aOff?-1:1;
     });
+    emit('playing', {durationMs: (actions.at(-1)?.at ?? 0) * beatMs, loop});
     const task = (async () => {
       const ids = new Map();
       try {
@@ -146,6 +150,7 @@
         for (const code of activeChords.keys()) up(code);
         active.clear();
         activeChords.clear();
+        emit('ended');
       }
     })();
     window.__songDone = task;
@@ -178,6 +183,7 @@
     return play(score,options);
   };
 
-  window.guitarPlayer = {play, playTab, stop};
+  // seated() — сидит ли игрок за гитарой Forest прямо сейчас (для HUD: режим нот).
+  window.guitarPlayer = {play, playTab, stop, seated: () => !!findGuitar()};
   console.info('Гитарный проигрыватель готов: guitarPlayer.play(score,{bpm,loop}) или guitarPlayer.playTab(tab,{bpm,loop})');
 })();

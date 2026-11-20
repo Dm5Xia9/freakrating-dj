@@ -3,9 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "convert": "node src/convert-gp.mjs"
+    "convert": "node src/convert-gp.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "build:converter": "vite build --config vite.converter.config.js"
   },
   "dependencies": {
     "guitarpro-parser": "^2.0.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8"
   }
 }
