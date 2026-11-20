@@ -149,6 +149,14 @@
     px(3, 7, '#d9d5e2', 1, 2); px(1, 9, '#d9d5e2', 5, 1);
     if (!on) for (let i = 0; i < 8; i++) px(i < 7 ? i : 6, 1 + i, '#ff7a8a');
   });
+  // Дорожка с нотами: тумблер ритм-игры (число цветных нот = число дорожек, серые — выключено).
+  const rhythmSprite = n => sprite('rhythm-' + n, 13, 12, px => {
+    const cols = ['#3fe0a0', '#ff5f7e', '#ffd34d', '#4fb6ff', '#c58bff'];
+    for (let y = 0; y < 12; y++) { const half = 3 + Math.floor(y / 3.4); px(6 - half, y, '#0b0a0f', half * 2 + 1, 1); px(7 - half, y, n ? '#2b2140' : '#24222b', half * 2 - 1, 1); }
+    const k = n || 5, gems = [[1, 9], [3, 5], [2, 2], [4, 7], [0, 4]];
+    for (let i = 0; i < k; i++) { const [lane, y] = gems[i], half = 3 + Math.floor(y / 3.4), x = 6 - half + 1 + Math.round(((lane + 0.5) / k) * (half * 2 - 1)) - 1; px(x, y, n ? cols[lane % 5] : '#6c6878', 2, 1); }
+    px(1, 10, n ? '#f1ecff' : '#6c6878', 11, 1);
+  });
   // Облачко с гитарой: «сядь за гитару».
   const bubbleSprite = () => sprite('bubble', 15, 14, px => {
     px(1, 0, '#0b0a0f', 13, 11); px(0, 1, '#0b0a0f', 15, 9);
@@ -300,6 +308,29 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .mode img{width:20px;height:20px}.mode .ic-sheet{width:16px;height:20px}
 .audio{display:flex;align-items:center;gap:6px;padding:3px 6px;background:var(--box);border:2px solid var(--line);border-radius:6px}
 .notes-mode .audio .spk,.notes-mode .audio .volr{display:none}
+.rgb{display:none;width:26px;height:24px;flex:none}.rgb img{width:26px;height:24px}
+.notes-mode .rgb{display:block}
+.rgb.on{filter:drop-shadow(0 0 4px var(--ac))}
+.rgb:hover{transform:translateY(-1px)}
+.rg{--h:min(360px,50vh);position:fixed;left:50%;bottom:64px;height:var(--h);width:calc(var(--h)*.75);transform:translate(-50%,16px);pointer-events:none;z-index:40;opacity:0;transform:translateY(16px);transition:opacity .3s,transform .3s}
+.rg.show{opacity:1;transform:translate(-50%,0)}
+.rg canvas{width:100%;height:100%;image-rendering:pixelated;display:block;filter:drop-shadow(0 4px 10px rgba(0,0,0,.5))}
+.rg-score{position:absolute;left:calc(100% + 4px);bottom:18%;font-size:18px;font-weight:600;color:#fff;text-shadow:2px 2px 0 #2b1f40;white-space:nowrap}
+.rg-mult{position:absolute;right:calc(100% + 4px);bottom:18%;min-width:34px;padding:2px 5px;text-align:center;font-size:16px;font-weight:600;color:#fff;background:#2b2140;border:2px solid #0b0a0f;box-shadow:inset 0 0 0 1px var(--line)}
+.rg-mult.x2{background:#2f6b8f}.rg-mult.x3{background:#8f5a2f}.rg-mult.x4{background:#8a2fa0;box-shadow:0 0 10px #c58bff;animation:blink .6s steps(2) infinite}
+.rg-combo{position:absolute;left:calc(100% + 4px);bottom:calc(18% + 26px);font-size:13px;color:var(--mu);text-shadow:1px 1px 0 #000}
+.rg-judge{position:absolute;left:0;right:0;top:44%;text-align:center;font-size:16px;font-weight:600;opacity:0;text-shadow:2px 2px 0 #0b0a0f}
+.rg-judge.p{color:#ffd34d}.rg-judge.g{color:#3fe0a0}.rg-judge.m{color:#ff7a8a}
+.rg-judge.pop{animation:judge .6s ease-out forwards}
+.rg-res{position:absolute;left:10px;right:10px;top:22%;padding:12px 8px;text-align:center;color:#fff;background:rgba(14,11,22,.95);border:2px solid var(--line);border-radius:6px;box-shadow:0 0 0 2px #0b0a0f}
+.rg-res.pop{animation:pop .35s cubic-bezier(.2,.9,.3,1.4)}
+.rg-res b{display:block;font-size:24px;margin:6px 0 2px;text-shadow:2px 2px 0 #2b1f40}
+.rg-res em{display:block;font-style:normal;color:#ffd34d;font-size:13px;animation:blink .5s steps(2) 6}
+.rg-res span{display:block;color:var(--mu);font-size:12px;margin-top:4px}
+.stars{display:flex;justify-content:center;gap:4px}
+.stars i{width:18px;height:18px;background:#3a3546;clip-path:polygon(50% 0,62% 36%,100% 38%,70% 60%,80% 100%,50% 76%,20% 100%,30% 60%,0 38%,38% 36%)}
+.stars i.on{background:#ffd34d;filter:drop-shadow(0 0 4px #ffd34d)}
+@keyframes judge{0%{opacity:0;transform:scale(.7)}15%{opacity:1;transform:scale(1.15)}30%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
 .micb{width:14px;height:20px;flex:none}.micb img{width:14px;height:20px}
 .micb.off{filter:drop-shadow(0 0 3px #ff7a8a)}
 .spk{width:36px;height:21px;flex:none}.spk img{width:36px;height:21px}
@@ -375,9 +406,11 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     status: 'idle', // idle | loading | waiting | playing | paused
     hover: false,
     volume: Number.isFinite(saved.volume) ? saved.volume : 0.8,
+    rhythm: [3, 4, 5].includes(saved.rhythm) ? saved.rhythm : 0,   // ритм-игра в режиме нот: 0 — выкл, иначе число дорожек
+    best: saved.best && typeof saved.best === 'object' ? saved.best : {},
   };
   let hudOptions = {};
-  const persist = () => save({ selId: state.tracks[state.sel]?.id, mode: state.notesPref ? 'notes' : 'records', broadcast: state.broadcast, voice: state.voice, volume: state.volume, custom: state.custom.map(({ el, _score, _song, _parts, ...t }) => t) });
+  const persist = () => save({ selId: state.tracks[state.sel]?.id, mode: state.notesPref ? 'notes' : 'records', broadcast: state.broadcast, voice: state.voice, volume: state.volume, rhythm: state.rhythm, best: state.best, custom: state.custom.map(({ el, _score, _song, _parts, ...t }) => t) });
 
   // ---------- DOM ----------
   const host = document.createElement('freakrating-dj');
@@ -400,7 +433,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       <div class="tlabel"></div><img class="bubble" alt=""><img class="keycap" alt=""><div class="screen"></div><div class="notes"></div></div>
     <div class="ctrls">
       <div class="modes"><button class="mode" data-mode="records" title="Пластинки"><img class="ic-vinyl" alt=""></button><button class="mode" data-mode="notes" title="Ноты — играть на гитаре в игре"><img class="ic-sheet" alt=""></button></div>
-      <div class="audio"><button class="spk" title="Трансляция в войс-чат"><img alt=""></button><button class="micb" title="Твой микрофон"><img alt=""></button><input class="volr" type="range" min="0" max="100" step="1" aria-label="Громкость"></div>
+      <div class="audio"><button class="spk" title="Трансляция в войс-чат"><img alt=""></button><button class="micb" title="Твой микрофон"><img alt=""></button><button class="rgb" title="Ритм-игра"><img alt=""></button><input class="volr" type="range" min="0" max="100" step="1" aria-label="Громкость"></div>
     </div>
     <div class="toast"></div>
   </section>
@@ -428,6 +461,339 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     link.dataset.freakdjFont = '';
     document.head.append(link);
   }
+
+  // ---------- Ритм-игра (режим нот, по желанию) ----------
+  // Ноты песни падают по дорожке к линии удара, игрок жмёт D F J K L. Попал — нота звучит на игровой гитаре
+  // (guitarPlayer.strike, её слышат все), промахнулся — нота выпадает из песни. Остальное гитара играет сама.
+  const rhythm = (() => {
+    const KEYS = ['KeyD', 'KeyF', 'KeyJ', 'KeyK', 'KeyL'], CAPS = ['D', 'F', 'J', 'K', 'L'];
+    const COLORS = ['#3fe0a0', '#ff5f7e', '#ffd34d', '#4fb6ff', '#c58bff'];
+    const DIFF = { 3: { gap: 0.42, look: 1.9, chords: false }, 4: { gap: 0.26, look: 1.6, chords: true }, 5: { gap: 0.17, look: 1.35, chords: true } };
+    const LEAD = 2.4, PERFECT = 0.05, GREAT = 0.1, WINDOW = 0.14;
+    const W = 120, H = 160, Y0 = 134, YTOP = 8, K = 2.6, LANE = 20;
+
+    const el = document.createElement('div');
+    el.className = 'rg';
+    el.innerHTML = `<canvas width="${W}" height="${H}"></canvas><div class="rg-mult"></div><div class="rg-score">0</div><div class="rg-combo"></div><div class="rg-judge"></div><div class="rg-res" hidden></div>`;
+    dj.append(el);
+    const cv = el.querySelector('canvas'), g = cv.getContext('2d');
+    const ui = { mult: el.querySelector('.rg-mult'), score: el.querySelector('.rg-score'), combo: el.querySelector('.rg-combo'), judge: el.querySelector('.rg-judge'), res: el.querySelector('.rg-res') };
+
+    let phase = 'idle', s = null, raf = 0, resTimer = 0;
+
+    const midiOf = n => {
+      const m = /^([A-G])([#b]?)(-?\d)$/.exec(String(n));
+      return m ? 12 * (Number(m[3]) + 1) + { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) : null;
+    };
+
+    // Чарт: мелодия (верхняя нота каждого удара), прореженная по сложности; аккорды — двумя дорожками.
+    function build(score, bpm, lanes) {
+      const cfg = DIFF[lanes], beat = 60 / bpm, items = [], byEvent = new Map();
+      for (const e of score) {
+        const at = Number(e.at), dur = Number(e.dur ?? 1);
+        if (!Number.isFinite(at)) continue;
+        const list = [];
+        for (const n of (Array.isArray(e.notes) ? e.notes : [e.note]).filter(Boolean)) {
+          const m = midiOf(n);
+          if (m !== null) { const it = { n, m, at, dur, taken: false }; items.push(it); list.push(it); }
+        }
+        byEvent.set(e, list);
+      }
+      items.sort((a, b) => a.at - b.at);
+      const groups = [];
+      for (const it of items) { const last = groups.at(-1); if (last && (it.at - last.at) * beat < 0.03) last.items.push(it); else groups.push({ at: it.at, items: [it] }); }
+      const gems = [];
+      let lastT = -1e9;
+      for (const grp of groups) {
+        const t = grp.at * beat;
+        if (t - lastT < cfg.gap) continue;
+        lastT = t;
+        const top = grp.items.reduce((a, b) => (b.m > a.m ? b : a));
+        const chord = cfg.chords && new Set(grp.items.map(i => i.m)).size >= 3;
+        const names = new Set(chord ? grp.items.map(i => i.n) : [top.n]);
+        grp.items.forEach(i => { if (names.has(i.n)) i.taken = true; });
+        gems.push({ t: t + LEAD, d: top.dur * beat, m: top.m, notes: [...names], chord });
+      }
+      // Дорожка по рисунку мелодии: выше нота — правее, в пределах соседних нот (±2.5 с).
+      let prev = null;
+      for (const gem of gems) {
+        const near = gems.filter(x => Math.abs(x.t - gem.t) < 2.5).map(x => x.m);
+        const lo = Math.min(...near), hi = Math.max(...near), span = hi - lo;
+        let lane = span < lanes - 1 ? Math.round(gem.m - lo + (lanes - 1 - span) / 2) : Math.round(((gem.m - lo) / span) * (lanes - 1));
+        if (prev) {
+          if (gem.m === prev.m) lane = prev.lane;
+          else if (gem.m > prev.m && lane <= prev.lane) lane = prev.lane + 1;
+          else if (gem.m < prev.m && lane >= prev.lane) lane = prev.lane - 1;
+        }
+        gem.lane = Math.max(0, Math.min(lanes - 1, lane));
+        gem.lanes = gem.chord ? [gem.lane, gem.lane >= 2 ? gem.lane - 2 : gem.lane + 2].sort((a, b) => a - b) : [gem.lane];
+        prev = gem;
+      }
+      // Длинные ноты: держать клавишу. Не залезаем на следующую ноту той же дорожки.
+      gems.forEach((gem, i) => {
+        gem.sus = 0;
+        if (gem.d < 0.5) return;
+        const next = gems.slice(i + 1).find(x => x.lanes.some(l => gem.lanes.includes(l)));
+        const sus = Math.min(gem.d, 4, next ? next.t - gem.t - 0.15 : 4);
+        if (sus >= 0.4) gem.sus = sus;
+      });
+      const auto = [];
+      for (const e of score) {
+        const rest = (byEvent.get(e) || []).filter(i => !i.taken).map(i => i.n);
+        if (!rest.length && !e.chord) continue;
+        auto.push({ ...e, at: Number(e.at) + LEAD / beat, notes: rest });
+      }
+      const end = Math.max(0, ...gems.map(x => x.t + Math.max(x.sus, 0.2)));
+      return { gems, auto, until: (end + 0.3) / beat, end, beat };
+    }
+    // Максимум очков (все ноты идеально, все длинные дотянуты) — для звёзд.
+    function maxScore(gems) {
+      let sc = 0, combo = 0;
+      for (const gem of gems) { combo++; const m = mult(combo); sc += 100 * m + Math.round(gem.sus * 60) * m; }
+      return Math.max(1, sc);
+    }
+    const mult = combo => 1 + Math.min(3, Math.floor(combo / 10));
+    const fmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');   // у пиксельного шрифта нет узкого пробела ru-RU
+
+    function arm(track, score, bpm, lanes) {
+      abort();
+      if (!DIFF[lanes] || !score?.length) return null;
+      const c = build(score, bpm, lanes);
+      if (!c.gems.length) return null;
+      s = { ...c, track, lanes, look: DIFF[lanes].look, max: maxScore(c.gems), t0: 0, score: 0, combo: 0, best: 0, hits: 0, perfect: 0, miss: 0, ended: false, held: new Set(), flash: [0, 0, 0, 0, 0], sparks: [], judgeAt: 0 };
+      phase = 'armed';
+      return c;
+    }
+    function begin() {
+      if (phase !== 'armed' || !s) return;
+      phase = 'running';
+      s.t0 = performance.now();
+      ui.res.hidden = true;
+      el.classList.add('show');
+      renderStats();
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(frame);
+    }
+    function abort() {
+      phase = 'idle';
+      cancelAnimationFrame(raf);
+      clearTimeout(resTimer);
+      if (s) for (const gem of s.gems) gem.release?.();
+      s = null;
+      el.classList.remove('show');
+      ui.res.hidden = true;
+    }
+    const now = () => (performance.now() - s.t0) / 1000;
+
+    function press(lane) {
+      const t = now();
+      s.held.add(lane);
+      s.flash[lane] = t;
+      let best = null;
+      for (const gem of s.gems) {
+        if (gem.done || !gem.lanes.includes(lane) || gem.pressed?.has(lane)) continue;
+        const dt = Math.abs(gem.t - t);
+        if (dt <= WINDOW && (!best || dt < Math.abs(best.t - t))) best = gem;
+        if (gem.t - t > WINDOW) break;
+      }
+      if (!best) return;
+      (best.pressed ||= new Map()).set(lane, t);
+      if (best.pressed.size === best.lanes.length) hit(best);
+    }
+    function release(lane) {
+      s.held.delete(lane);
+      const t = now();
+      for (const gem of s.gems) if (gem.holding && gem.lanes.includes(lane)) {
+        gem.holding = false;
+        if (t < gem.t + gem.sus - 0.12) gem.release?.();   // отпустил рано — нота обрывается
+      }
+    }
+    function hit(gem) {
+      const err = Math.max(...[...gem.pressed.values()].map(x => Math.abs(x - gem.t)));
+      gem.done = 'hit';
+      s.combo++; s.hits++;
+      s.best = Math.max(s.best, s.combo);
+      const perfect = err <= PERFECT;
+      if (perfect) s.perfect++;
+      s.score += (perfect ? 100 : err <= GREAT ? 70 : 40) * mult(s.combo);
+      judge(perfect ? 'Идеально' : err <= GREAT ? 'Отлично' : 'Норм', perfect ? 'p' : 'g');
+      try { gem.release = window.guitarPlayer?.strike?.(gem.notes, (gem.sus || Math.min(gem.d, 1.2)) * 1000 + 40); } catch { /* гитара занята */ }
+      if (gem.sus) { gem.holding = true; gem.holdFrom = gem.t; }
+      for (const l of gem.lanes) sparks(l, 10);
+      renderStats();
+    }
+    function miss(gem) {
+      gem.done = 'miss';
+      s.miss++;
+      if (s.combo >= 10) judge('Серия прервана', 'm'); else judge('Мимо', 'm');
+      s.combo = 0;
+      renderStats();
+    }
+    function judge(text, cls) {
+      ui.judge.textContent = text;
+      ui.judge.className = `rg-judge ${cls}`;
+      void ui.judge.offsetWidth;
+      ui.judge.classList.add('pop');
+    }
+    function renderStats() {
+      const m = mult(s.combo);
+      ui.score.textContent = fmt(s.score);
+      ui.mult.textContent = `×${m}`;
+      ui.mult.className = `rg-mult x${m}`;
+      ui.combo.textContent = s.combo >= 5 ? s.combo : '';
+    }
+
+    // ---- Отрисовка: пиксельная дорожка в перспективе ----
+    const proj = sAhead => {
+      const z = 1 + sAhead * K, sc = 1 / z;
+      return { y: Y0 - (Y0 - YTOP) * (1 - sc) / (1 - 1 / (1 + K)), sc };
+    };
+    const laneX = (lane, sc) => W / 2 + (lane - (s.lanes - 1) / 2) * LANE * sc;
+    function sparks(lane, n) {
+      const x = laneX(lane, 1);
+      for (let i = 0; i < n; i++) s.sparks.push({ x, y: Y0, vx: (Math.random() - 0.5) * 70, vy: -30 - Math.random() * 70, life: 0.45, c: COLORS[lane] });
+    }
+    let lastFrame = 0;
+    function frame(ts) {
+      if (phase !== 'running' || !s) return;
+      const dtf = Math.min(0.05, (ts - (lastFrame || ts)) / 1000);
+      lastFrame = ts;
+      const t = now();
+      for (const gem of s.gems) {
+        if (!gem.done && t > gem.t + WINDOW) miss(gem);
+        if (gem.holding) {
+          const to = Math.min(t, gem.t + gem.sus);
+          s.score += Math.round((to - gem.holdFrom) * 60) * mult(s.combo);
+          gem.holdFrom = to;
+          if (t >= gem.t + gem.sus) gem.holding = false;
+          else if (Math.random() < 0.3) for (const l of gem.lanes) sparks(l, 1);
+        }
+      }
+      if (s.gems.some(x => x.holding)) renderStats();
+      draw(t, dtf);
+      if ((s.ended || t > s.end + 1.5) && t > s.end + 0.6) return finish();
+      raf = requestAnimationFrame(frame);
+    }
+    function draw(t, dtf) {
+      g.clearRect(0, 0, W, H);
+      const far = proj(1), near = proj(-0.06), half = (s.lanes * LANE) / 2;
+      // полотно
+      g.fillStyle = 'rgba(12,9,20,.82)';
+      g.beginPath();
+      g.moveTo(W / 2 - half * far.sc, far.y); g.lineTo(W / 2 + half * far.sc, far.y);
+      g.lineTo(W / 2 + half * near.sc, near.y); g.lineTo(W / 2 - half * near.sc, near.y); g.fill();
+      // доли
+      g.fillStyle = 'rgba(196,178,236,.16)';
+      const beat = s.beat;
+      for (let k = Math.ceil((t - 0.1) / beat); k * beat < t + s.look; k++) {
+        const p = proj((k * beat - t) / s.look);
+        g.fillRect(Math.round(W / 2 - half * p.sc), Math.round(p.y), Math.round(half * 2 * p.sc), 1);
+      }
+      // разделители дорожек
+      for (let l = 0; l <= s.lanes; l++) {
+        const off = (l - s.lanes / 2) * LANE;
+        g.strokeStyle = l === 0 || l === s.lanes ? 'rgba(169,116,255,.55)' : 'rgba(196,178,236,.14)';
+        g.lineWidth = 1;
+        g.beginPath(); g.moveTo(W / 2 + off * far.sc, far.y); g.lineTo(W / 2 + off * near.sc, near.y); g.stroke();
+      }
+      // хвосты длинных нот
+      for (const gem of s.gems) {
+        if (!gem.sus || gem.t - t > s.look || gem.t + gem.sus < t - 0.1) continue;
+        if (gem.done === 'hit' && !gem.holding) continue;
+        const a = proj(Math.max(gem.holding ? 0 : -0.06, (gem.t - t) / s.look)), b = proj(Math.min(1, (gem.t + gem.sus - t) / s.look));
+        for (const l of gem.lanes) {
+          g.fillStyle = gem.done === 'miss' ? 'rgba(120,112,140,.5)' : COLORS[l] + (gem.holding ? 'ff' : 'aa');
+          g.beginPath();
+          g.moveTo(laneX(l, b.sc) - 1.5 * b.sc, b.y); g.lineTo(laneX(l, b.sc) + 1.5 * b.sc, b.y);
+          g.lineTo(laneX(l, a.sc) + 2.5 * a.sc, a.y); g.lineTo(laneX(l, a.sc) - 2.5 * a.sc, a.y); g.fill();
+        }
+      }
+      // линия удара и приёмники
+      for (let l = 0; l < s.lanes; l++) {
+        const x = Math.round(laneX(l, 1)), on = s.held.has(l), glow = Math.max(0, 1 - (t - s.flash[l]) / 0.15);
+        g.fillStyle = '#0b0a0f'; g.fillRect(x - 8, Y0 - 3, 16, 7);
+        g.fillStyle = COLORS[l]; g.globalAlpha = on ? 1 : 0.45 + glow * 0.5;
+        g.fillRect(x - 7, Y0 - 2, 14, 5);
+        g.fillStyle = '#0b0a0f'; g.globalAlpha = 1;
+        if (!on) g.fillRect(x - 5, Y0 - 1, 10, 3);
+        // клавиша под дорожкой
+        g.fillStyle = '#0b0a0f'; g.fillRect(x - 5, Y0 + 8, 11, 11);
+        g.fillStyle = on ? COLORS[l] : '#e6e2ef'; g.fillRect(x - 4, Y0 + 9, 9, on ? 9 : 7);
+        g.fillStyle = on ? '#ffffff' : '#8d8a96'; if (!on) g.fillRect(x - 4, Y0 + 16, 9, 2);
+        drawCap(CAPS[l], x - 2, Y0 + (on ? 11 : 10));
+      }
+      // ноты (дальние — первыми)
+      for (let i = s.gems.length - 1; i >= 0; i--) {
+        const gem = s.gems[i];
+        if (gem.done === 'hit') continue;
+        const ahead = (gem.t - t) / s.look;
+        if (ahead > 1 || ahead < -0.12) continue;
+        const p = proj(ahead), w = Math.max(3, Math.round(15 * p.sc)), h = Math.max(2, Math.round(6 * p.sc));
+        for (const l of gem.lanes) {
+          const x = Math.round(laneX(l, p.sc) - w / 2), y = Math.round(p.y - h / 2);
+          g.fillStyle = '#0b0a0f'; g.fillRect(x - 1, y - 1, w + 2, h + 2);
+          g.fillStyle = gem.done === 'miss' ? '#5a5566' : COLORS[l]; g.fillRect(x, y, w, h);
+          g.fillStyle = 'rgba(255,255,255,.55)'; g.fillRect(x, y, w, 1);
+          if (gem.chord) { g.fillStyle = '#ffffff'; g.fillRect(x + Math.floor(w / 2) - 1, y + Math.floor(h / 2), 2, 1); }
+        }
+      }
+      // искры
+      for (const p of s.sparks) { p.life -= dtf; p.x += p.vx * dtf; p.y += p.vy * dtf; p.vy += 160 * dtf; g.fillStyle = p.c; g.globalAlpha = Math.max(0, p.life / 0.45); g.fillRect(Math.round(p.x), Math.round(p.y), 2, 2); }
+      g.globalAlpha = 1;
+      s.sparks = s.sparks.filter(p => p.life > 0);
+      // прогресс песни по краю
+      const prog = Math.min(1, Math.max(0, (t - LEAD) / Math.max(1, s.end - LEAD)));
+      g.fillStyle = '#1c1a23'; g.fillRect(4, H - 3, W - 8, 2);
+      g.fillStyle = '#a974ff'; g.fillRect(4, H - 3, Math.round((W - 8) * prog), 2);
+    }
+    const GLYPHS = { D: ['##.', '#.#', '#.#', '#.#', '##.'], F: ['###', '#..', '##.', '#..', '#..'], J: ['..#', '..#', '..#', '#.#', '.#.'], K: ['#.#', '##.', '#..', '##.', '#.#'], L: ['#..', '#..', '#..', '#..', '###'] };
+    function drawCap(ch, x, y) {
+      g.fillStyle = '#2a2733';
+      GLYPHS[ch].forEach((row, iy) => [...row].forEach((c, ix) => c === '#' && g.fillRect(x + ix, y + iy, 1, 1)));
+    }
+
+    function finish() {
+      phase = 'done';
+      cancelAnimationFrame(raf);
+      const total = s.gems.length, acc = total ? (s.perfect + (s.hits - s.perfect) * 0.7) / total : 0;
+      const ratio = s.score / s.max, stars = [0.12, 0.3, 0.5, 0.7, 0.88].filter(x => ratio >= x).length;
+      const key = `${s.track.id}|${s.lanes}`, prevBest = state.best[key] || 0, record = s.score > prevBest;
+      if (record) { state.best[key] = s.score; persist(); }
+      ui.res.innerHTML = `<div class="stars">${[0, 1, 2, 3, 4].map(i => `<i class="${i < stars ? 'on' : ''}"></i>`).join('')}</div>
+        <b>${fmt(s.score)}</b>${record && prevBest ? '<em>рекорд!</em>' : ''}
+        <span>${Math.round(acc * 100)}% · серия ${s.best} · ${s.hits}/${total}</span>`;
+      ui.res.hidden = false;
+      ui.res.classList.remove('pop'); void ui.res.offsetWidth; ui.res.classList.add('pop');
+      if (stars >= 3) sfx('add');
+      resTimer = setTimeout(() => { if (phase === 'done') abort(); }, 7000);
+    }
+
+    // Клавиши дорожек перехватываем раньше игры (её обработчики висят на document), иначе гитара сыграет их ещё раз.
+    const onKey = e => {
+      if (phase !== 'running' || !s || e.ctrlKey || e.metaKey || e.altKey) return;
+      const lane = KEYS.indexOf(e.code);
+      if (lane < 0 || lane >= s.lanes) return;
+      const tgt = e.composedPath()[0];
+      if (tgt instanceof HTMLElement && (tgt.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tgt.tagName))) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.type === 'keydown') { if (!e.repeat) press(lane); } else release(lane);
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('keyup', onKey, true);
+    window.addEventListener('blur', () => { if (s) for (const l of [...s.held]) release(l); });
+    window.addEventListener('guitarplayer', e => {
+      const st = e.detail?.state;
+      if (st === 'playing') begin();
+      else if (st === 'ended' && phase === 'running' && s) s.ended = true;
+    });
+    return {
+      arm, abort,
+      active: () => phase === 'running' || phase === 'armed',
+      debug: () => s,
+      destroy() { abort(); window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKey, true); },
+    };
+  })();
 
   // ---------- Рендер ящика ----------
   function slot(o) {
@@ -576,6 +942,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     mb.classList.toggle('off', !state.voice);
     mb.querySelector('img').src = micSprite(state.voice);
     mb.title = state.voice ? 'Твой микрофон: слышно' : 'Твой микрофон: выключен — другие слышат только музыку';
+    const rb = $('.rgb');
+    rb.classList.toggle('on', !!state.rhythm);
+    rb.querySelector('img').src = rhythmSprite(state.rhythm);
+    rb.title = state.rhythm ? `Ритм-игра: ${state.rhythm} дорожки (${['D', 'F', 'J', 'K', 'L'].slice(0, state.rhythm).join(' ')})` : 'Ритм-игра: выкл';
     volr.value = Math.round(state.volume * 100);
     volr.style.setProperty('--p', `${volr.value}%`);
   }
@@ -609,6 +979,14 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     persist();
     sfx(v ? 'add' : 'select');
     toast(v ? 'Твой микрофон снова слышно' : 'Микрофон выключен — тебя не слышно, музыка идёт');
+  }
+  // Ритм-игра: выкл → 3 → 4 → 5 дорожек → выкл. Включается со следующего запуска нот.
+  function setRhythm(n) {
+    state.rhythm = n;
+    renderControls();
+    persist();
+    sfx(n ? 'add' : 'select');
+    if (state.loaded && state.status !== 'idle' && notesMode()) toast(n ? 'Ритм-игра начнётся со следующей песни' : 'Ритм-игра выключится со следующей песни');
   }
   // Режим нот доступен только за гитарой; встал из-за гитары — снова пластинки.
   function setSeated(v) {
@@ -1354,6 +1732,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     }
     function halt() {
       pending = false;
+      rhythm.abort();
       if (ytMode === 'client') { try { client()?.radioStop(); } catch { /* клиент закрывается */ } radioReset(); }
       if (ytCapGain) ytCapGain.gain.value = 0;   // захват вкладки молчит, пока YouTube не играет
       if (ytMode === 'popup' && ytWin && !ytWin.closed) { try { ytWin.location.href = 'about:blank'; } catch { /* окно закрыто */ } }
@@ -1441,6 +1820,12 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         }
         const player = await waitPlayer();
         if (current !== t) return;
+        if (state.rhythm && typeof player.strike === 'function') {
+          const { score, bpm } = await getScore(t);
+          if (current !== t) return;
+          const chart = rhythm.arm(t, score, bpm, state.rhythm);
+          if (chart) { pending = true; await player.play(chart.auto, { bpm, loop: false, until: chart.until }); return; }
+        } else if (state.rhythm) toast('Для ритм-игры обнови скрипт Tampermonkey', true);
         pending = true;
         if (t.score) await player.play(t.score, { bpm: t.bpm || 120, loop: false });
         else if (t.tab) await player.playTab(t.tab, { bpm: t.bpm || 90 });
@@ -1642,6 +2027,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     if (target.matches('.mode')) return setMode(target.dataset.mode);
     if (target.matches('.spk')) return setBroadcast(!state.broadcast);
     if (target.matches('.micb')) return setVoice(!state.voice);
+    if (target.matches('.rgb')) return setRhythm({ 0: 3, 3: 4, 4: 5, 5: 0 }[state.rhythm]);
     const i = target.matches('.rec') ? Number(target.dataset.i) : -1;
     if (i < 0 || !state.tracks[i]) return;
     if (i !== state.sel) return select(i);
@@ -1784,8 +2170,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       return this;
     },
     addTrack: addFromText,
+    _rhythm: () => rhythm.debug(),
     destroy() {
       ctl.destroy();
+      rhythm.destroy();
       clearInterval(tickTimer);
       clearInterval(seatTimer);
       clearInterval(noteTimer);

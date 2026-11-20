@@ -5,7 +5,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const emit = (state, extra = {}) => window.dispatchEvent(new CustomEvent('guitarplayer', { detail: { state, ...extra } }));
 let run = 0, task = Promise.resolve();
 const stop = () => { run++; };
-async function play(score, { bpm = 120, loop = false } = {}) {
+// Звук мока: тихий аккомпанемент + громкие удары strike() — чтобы проверять ритм-игру без игры.
+let ac;
+const midi = n => { const m = /^([A-G])([#b]?)(-?\d)$/.exec(n); return m ? 12 * (+m[3] + 1) + { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) : 60; };
+function pluck(note, durMs, vol) {
+  ac ||= new AudioContext();
+  const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle'; o.frequency.value = 440 * 2 ** ((midi(note) - 69) / 12);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + Math.min(2, durMs / 1000 + 0.1));
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 2.1);
+  return () => { g.gain.cancelScheduledValues(ac.currentTime); g.gain.setTargetAtTime(0, ac.currentTime, 0.02); };
+}
+async function play(score, { bpm = 120, loop = false, until = 0 } = {}) {
   stop();
   await task;
   const id = run;
@@ -13,18 +24,25 @@ async function play(score, { bpm = 120, loop = false } = {}) {
   task = (async () => {
     await sleep(1500);
     if (id !== run) { emit('ended'); return; }
-    const end = Math.max(...score.map(e => Number(e.at) + Number(e.dur ?? 1)));
-    const durationMs = (end * 60000) / bpm, t0 = performance.now();
+    const end = Math.max(until, ...score.map(e => Number(e.at) + Number(e.dur ?? 1)));
+    const beat = 60000 / bpm, durationMs = end * beat, t0 = performance.now();
     emit('playing', { durationMs, loop });
-    while (id === run && (loop || performance.now() - t0 < durationMs)) await sleep(100);
+    const evs = [...score].sort((a, b) => a.at - b.at);
+    let i = 0;
+    while (id === run && (loop || performance.now() - t0 < durationMs)) {
+      const el = performance.now() - t0;
+      while (i < evs.length && evs[i].at * beat <= el) { const e = evs[i++]; for (const n of e.notes || []) pluck(n, (e.dur ?? 1) * beat, 0.04); }
+      await sleep(10);
+    }
     emit('ended');
   })();
   return task;
 }
+const strike = (notes, durMs) => { const r = notes.map(n => pluck(n, durMs, 0.16)); return () => r.forEach(f => f()); };
 // Клавиша G в превью — «сесть/встать» за гитару (в игре это определяет guitar-player.js).
 let seated = false;
 window.addEventListener('keydown', e => { if (e.code === 'KeyG' && !(e.target instanceof HTMLInputElement)) seated = !seated; });
-window.guitarPlayer = { play, stop, seated: () => seated, playTab: (tab, o) => play([{ at: 0, dur: 64 }], o) };
+window.guitarPlayer = { play, stop, strike, seated: () => seated, playTab: (tab, o) => play([{ at: 0, dur: 64 }], o) };
 
 // Демо-«цифровая» пластинка: синтезированный WAV-луп.
 function demoWav(seconds = 12, rate = 22050) {

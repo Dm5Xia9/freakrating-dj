@@ -81,7 +81,8 @@
   };
   const chordIndex={Am:1,C:2,G:3,Em:4,Dm:5,F:6,E:7,D:8};
 
-  const play = async (score, {bpm=120, loop=false, humanizeMs=4}={}) => {
+  // until (в долях) — не завершать раньше этой доли: ритм-игра доигрывает свои ноты сама через strike().
+  const play = async (score, {bpm=120, loop=false, humanizeMs=4, until=0}={}) => {
     const previous = window.__songDone;
     stop();
     await Promise.resolve(previous).catch(() => {});
@@ -117,7 +118,8 @@
       const aOff=a.kind==='off'||a.kind==='chordOff',bOff=b.kind==='off'||b.kind==='chordOff';
       return aOff===bOff?0:aOff?-1:1;
     });
-    emit('playing', {durationMs: (actions.at(-1)?.at ?? 0) * beatMs, loop});
+    const endBeat = Math.max(actions.at(-1)?.at ?? 0, Number(until) || 0);
+    emit('playing', {durationMs: endBeat * beatMs, loop});
     const task = (async () => {
       const ids = new Map();
       try {
@@ -129,7 +131,8 @@
             await wait(start + a.at*beatMs + jitter - performance.now());
             if (window.__stopSong || run !== serial) break;
             if (a.kind === 'on') {
-              if (active.size >= 8 && !active.has(locate(pitch(a.note)).code)) throw new Error('Гитара Forest поддерживает до 8 одновременно зажатых нот.');
+              // Гитара держит до 8 нот: при переполнении отпускаем самую старую, а не обрываем песню.
+              if (active.size >= 8 && !active.has(locate(pitch(a.note)).code)) { const [code] = active.keys(); up(code); active.delete(code); }
               ids.set(a.id, {code:noteOn(a.note, a.id),kind:'note'});
             } else if(a.kind==='chordOn'){
               const code=`Digit${a.chord}`;
@@ -142,7 +145,10 @@
               ids.delete(a.id);
             }
           }
-          if (!loop || window.__stopSong || run !== serial) break;
+          if (!loop || window.__stopSong || run !== serial) {
+            while (!loop && !window.__stopSong && run === serial && performance.now() - start < endBeat * beatMs) await wait(Math.min(200, start + endBeat * beatMs - performance.now()));
+            break;
+          }
           await wait((actions.at(-1)?.at ?? 0)*beatMs + beatMs - (performance.now()-start));
         } while (!window.__stopSong && run === serial);
       } finally {
@@ -183,7 +189,28 @@
     return play(score,options);
   };
 
+  // strike(notes, durMs) — сыграть ноты прямо сейчас (ритм-игра HUD: попал по ноте — она звучит).
+  // Возвращает функцию, которая отпускает ноты раньше (отпустил длинную ноту).
+  let strikeId = 0;
+  const strike = (notes, durMs = 250) => {
+    const found = findGuitar();
+    if (!found || window.__stopSong) return () => {};
+    guitar = found;
+    const id = `s${++strikeId}`, codes = [];
+    for (const note of notes || []) {
+      try {
+        const code = locate(pitch(note)).code;
+        if (active.size >= 8 && !active.has(code)) { const [old] = active.keys(); up(old); active.delete(old); }
+        codes.push(noteOn(note, id));
+      } catch { /* нота вне диапазона гитары */ }
+    }
+    let done = false;
+    const release = () => { if (done) return; done = true; for (const code of codes) if (active.get(code) === id) { up(code); active.delete(code); } };
+    setTimeout(release, Math.max(60, durMs));
+    return release;
+  };
+
   // seated() — сидит ли игрок за гитарой Forest прямо сейчас (для HUD: режим нот).
-  window.guitarPlayer = {play, playTab, stop, seated: () => !!findGuitar()};
+  window.guitarPlayer = {play, playTab, stop, strike, seated: () => !!findGuitar()};
   console.info('Гитарный проигрыватель готов: guitarPlayer.play(score,{bpm,loop}) или guitarPlayer.playTab(tab,{bpm,loop})');
 })();
