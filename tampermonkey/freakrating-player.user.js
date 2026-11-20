@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FreakRating DJ player
 // @namespace    https://github.com/Dm5Xia9/freakrating-dj
-// @version      1.3.0
+// @version      1.3.1
 // @description  Record-crate HUD: choose a vinyl and play it on the in-game guitar.
 // @match        https://freakrating.lol/*
 // @match        https://www.freakrating.lol/*
@@ -33,13 +33,19 @@
   // voice-hook.js (@require) уже перехватил отправителей голоса — до кода игры. HUD ждёт DOM.
   if (document.readyState === 'loading') await new Promise(r => document.addEventListener('DOMContentLoaded', r, { once: true }));
 
+  // В песочнице Tampermonkey `window` — обёртка: она не видит то, что скрипты через new Function кладут на
+  // настоящее окно. Поэтому настоящие глобальные объекты читаем через unsafeWindow, а HUD возвращаем напрямую.
+  const W = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+
   // Функция-обёртка: async IIFE из скрипта возвращает промис, чтобы ловить ошибки.
   const run = code => { const holder = {}; new Function('__dj', code.replace(/^\(async\b/m, '__dj.p=(async'))(holder); return holder.p; };
 
   try {
-    run(await get(HUD_URL));
-    window.FreakDJ.start({
+    const dj = new Function(`${await get(HUD_URL)}\nreturn window.FreakDJ;`)() || W.FreakDJ;
+    if (!dj?.start) throw new Error('HUD не загрузился');
+    dj.start({
       loadText: get,
+      hooks: W.FreakDJHooks,
       // Конвертер GP грузится только при первом приложенном файле.
       loadConverter: async () => new Function(`${await get(CONVERTER_URL)}\nreturn FreakDJConvert;`)().convertGp,
       async listSongs() {
@@ -49,7 +55,7 @@
     });
   } catch (e) { console.error('[FreakRating DJ] HUD', e); }
 
-  if (!window.guitarPlayer) {
+  if (!W.guitarPlayer) {
     try { await run(await get(PLAYER_URL)); } catch (e) { console.error('[FreakRating DJ] player', e); }
   }
 })();

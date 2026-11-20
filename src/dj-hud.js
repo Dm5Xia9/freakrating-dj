@@ -676,7 +676,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   };
   const mic = (() => {
     let dest = null, bus = null, out = null, gameSrc = null, active = false, release = null, releaseTimer = 0, holds = 0, keepTimer = 0;
-    const hooks = () => window.FreakDJHooks;
+    const hooks = () => hudOptions.hooks || window.FreakDJHooks;
     function ensure() {
       const c = graphCtx();
       if (!dest) { dest = c.createMediaStreamDestination(); bus = c.createGain(); out = dest.stream.getAudioTracks()[0]; }
