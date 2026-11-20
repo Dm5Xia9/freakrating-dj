@@ -1,0 +1,26 @@
+name: Release music library
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package player and music
+        run: |
+          mkdir -p dist/lib
+          cp src/guitar-player.js dist/
+          cp lib/play-*.js dist/lib/
+          cp tampermonkey/freakrating-player.user.js dist/
+          cd dist
+          zip -r ../freakrating-dj-${GITHUB_REF_NAME}.zip .
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: freakrating-dj-${{ github.ref_name }}.zip
