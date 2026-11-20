@@ -998,7 +998,8 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         await Promise.all(Object.entries(DRUM_KIT).map(async ([k, path]) => {
           let bytes = await idb.get(`dr:${path}`).catch(() => null);
           if (!(bytes instanceof ArrayBuffer)) { bytes = await opts.loadBinary(DRUM_BASE + path); idb.put(`dr:${path}`, bytes.slice(0)).catch(() => {}); }
-          kit[k] = await c.decodeAudioData(bytes.slice(0));
+          const buffer = await c.decodeAudioData(bytes.slice(0));
+          kit[k] = { buffer, norm: loudnessNorm(buffer, { peak: true }) };
         }));
         return kit;
       })().catch(e => { drumKitP = null; throw e; });
@@ -1022,15 +1023,27 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       })().catch(e => { instruments.delete(name); throw e; }));
       return instruments.get(name);
     }
+    // Семплы банка записаны с разной громкостью: у баса ноты выше A4 тише на 15 дБ, глушёная гитара тише баса на 19 дБ.
+    // Выравниваем каждую ноту к одной громкости по первым 0.4 с (RMS), ударные — по пику.
+    function loudnessNorm(buffer, { peak = false, target = -22 } = {}) {
+      const d = buffer.getChannelData(0), n = Math.min(d.length, Math.floor(buffer.sampleRate * 0.4));
+      let sum = 0, max = 0;
+      for (let i = 0; i < n; i++) { sum += d[i] * d[i]; max = Math.max(max, Math.abs(d[i])); }
+      const level = peak ? max : Math.sqrt(sum / Math.max(1, n));
+      if (level < 1e-5) return 1;
+      // Не даём пику после выравнивания выйти за 0.9: резкая атака тихой ноты иначе бьёт лимитер.
+      const gain = (peak ? 0.7 : 10 ** (target / 20)) / level;
+      return Math.min(6, 0.9 / Math.max(max, 1e-5), Math.max(0.25, gain));
+    }
     async function sampleFor(inst, midi) {
       let key = null, best = Infinity;
       for (const k of inst.notes.keys()) { const d = Math.abs(k - midi); if (d < best) { best = d; key = k; } }
       if (!inst.buffers.has(key)) {
         const bin = atob(inst.notes.get(key)), bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        inst.buffers.set(key, graphCtx().decodeAudioData(bytes.buffer));
+        inst.buffers.set(key, graphCtx().decodeAudioData(bytes.buffer).then(buffer => ({ buffer, norm: loudnessNorm(buffer) })));
       }
-      return { key, buffer: await inst.buffers.get(key) };
+      return { key, ...(await inst.buffers.get(key)) };
     }
     const libManifest = () => manifestP ||= Promise.resolve(opts.libBase ? opts.loadText(`${opts.libBase}sources.json`) : null)
       .then(t => (t ? JSON.parse(t) : null)).catch(() => { manifestP = null; return null; });
@@ -1081,20 +1094,25 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     }
     function gpStart(t, song, parts) {
       actx = graphCtx();
+      // Мягкий лимитер только от перегруза: компрессор по умолчанию (−24 дБ, 12:1) «качал» — громкие удары
+      // давили всё остальное, и звук то пропадал, то возвращался.
       const out = actx.createGain(), comp = actx.createDynamicsCompressor();
       out.gain.value = state.volume;
+      comp.threshold.value = -6; comp.knee.value = 6; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.2;
       out.connect(comp).connect(actx.destination);
       comp.connect(mic.input());
       const list = [];
+      let partId = 0;
       for (const p of parts) {
+        p.id = partId++;
         // Баланс оригинала из микшера GP; семплы ударных громче семплов инструментов — ведём их тише.
         const tg = actx.createGain(), panner = actx.createStereoPanner?.();
-        tg.gain.value = (p.drums ? 0.32 : 0.8) * (p.vol ?? 0.66);
+        tg.gain.value = (p.drums ? 0.28 : 0.38) * (p.vol ?? 0.8);
         if (panner) { panner.pan.value = Math.max(-1, Math.min(1, p.pan || 0)); tg.connect(panner).connect(out); } else tg.connect(out);
         for (const n of p.notes) list.push({ n, p, tg });
       }
       list.sort((a, b) => a.n.s - b.n.s);
-      const s = { out, comp, list, i: 0, t0: actx.currentTime + 0.15, end: song.durationMs / 1000, track: t };
+      const s = { out, comp, list, i: 0, t0: actx.currentTime + 0.15, end: song.durationMs / 1000, track: t, voices: new Map() };
       s.timer = setInterval(() => gpPump(s), 60);
       gpp = s;
       durationMs = song.durationMs;
@@ -1104,12 +1122,12 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     function gpNote(s, { n, p, tg }) {
       const at = Math.max(actx.currentTime, s.t0 + n.s / 1000);
       if (p.drums) {
-        const d = p.kit && DRUM_MAP[n.m], buf = d && p.kit[d[0]];
-        if (!buf) return drum(actx, tg, at, n.m, n.v);   // нет семпла — синтезированный удар
+        const d = p.kit && DRUM_MAP[n.m], hit = d && p.kit[d[0]];
+        if (!hit) return drum(actx, tg, at, n.m, n.v);   // нет семпла — синтезированный удар
         const src = actx.createBufferSource(), g = actx.createGain();
-        src.buffer = buf;
+        src.buffer = hit.buffer;
         src.playbackRate.value = d[1];
-        g.gain.setValueAtTime(n.v * d[3], at);
+        g.gain.setValueAtTime(n.v * d[3] * hit.norm, at);
         g.gain.setTargetAtTime(0, at + d[2], 0.06);
         src.connect(g).connect(tg);
         src.start(at);
@@ -1126,12 +1144,16 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       if (n.lr) end += 1.2;
       if (n.pm) end = Math.min(end, at + 0.18);
       if (n.d) end = at + 0.05;
-      g.gain.setValueAtTime(n.v * (n.d ? 0.4 : 1), at);
-      g.gain.setTargetAtTime(0, end, n.pm || n.d ? 0.03 : 0.12);
+      // Как на настоящей гитаре: новая нота на той же струне (или та же нота) глушит предыдущую — иначе звук копится.
+      const key = `${p.id}:${n.st ?? `m${n.m}`}`, prev = s.voices.get(key);
+      if (prev && prev.end > at) { prev.g.gain.cancelScheduledValues(at); prev.g.gain.setTargetAtTime(0, at, 0.015); }
+      s.voices.set(key, { g, end: end + 0.5 });
+      g.gain.setValueAtTime(n.v * (n.d ? 0.4 : 1) * smp.norm, at);
+      g.gain.setTargetAtTime(0, end, n.pm || n.d ? 0.03 : 0.15);
       src.connect(g).connect(tg);
       src.start(at);
       src.stop(end + 0.8);
-      src.onended = () => g.disconnect();
+      src.onended = () => { g.disconnect(); if (s.voices.get(key)?.g === g) s.voices.delete(key); };
     }
     function gpPump(s) {
       if (gpp !== s) return;

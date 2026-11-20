@@ -50,13 +50,13 @@ export function songEvents(inputBytes, filename = 'song.gp') {
       let v = DYNAMIC[n.dynamic] ?? 0.72;
       if (n.ghost) v *= 0.5;
       if (n.accent) v = Math.min(1, v * (n.accent === 'heavyAccent' ? 1.25 : 1.12));
-      notes.push({ s: Math.round(s), e: Math.round(e), m: n.midi, v: Math.round(v * 100) / 100, ...(n.dead ? { d: 1 } : {}), ...(n.palmMute ? { pm: 1 } : {}), ...(n.letRing ? { lr: 1 } : {}) });
+      notes.push({ s: Math.round(s), e: Math.round(e), m: n.midi, v: Math.round(v * 100) / 100, ...(Number.isInteger(n.string) ? { st: n.string } : {}), ...(n.dead ? { d: 1 } : {}), ...(n.palmMute ? { pm: 1 } : {}), ...(n.letRing ? { lr: 1 } : {}) });
       durationMs = Math.max(durationMs, e);
     }
-    // Микшер GP3–GP5 (через патч парсера, 0–16): громкость → амплитуда по кривой MIDI, панорама → −1…1.
+    // Микшер GP3–GP5 (через патч парсера, 0–16): громкость → линейно (квадратичная кривая MIDI глушила тихие партии), панорама → −1…1.
     const midiVol = Number.isFinite(track.volume) ? Math.max(0, Math.min(127, track.volume * 8 - 1)) : 103;
     const midiPan = Number.isFinite(track.balance) ? Math.max(0, Math.min(127, track.balance * 8 - 1)) : 63;
-    const vol = Math.round((midiVol / 127) ** 2 * 100) / 100, pan = Math.round(((midiPan - 63.5) / 63.5) * 100) / 100;
+    const vol = Math.round((midiVol / 127) * 100) / 100, pan = Math.round(((midiPan - 63.5) / 63.5) * 100) / 100;
     return { name: fixText(track.name || ''), program: track.program, percussion, kind: track.kind, vol, pan, notes };
   }).filter(t => t.notes.length);
   if (!tracks.length) throw new Error('В файле нет нот.');
