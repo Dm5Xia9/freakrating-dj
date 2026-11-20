@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FreakRating DJ player
 // @namespace    https://github.com/Dm5Xia9/freakrating-dj
-// @version      1.4.0
+// @version      1.5.0
 // @description  Record-crate HUD: choose a vinyl and play it on the in-game guitar.
 // @match        https://freakrating.lol/*
 // @match        https://www.freakrating.lol/*
@@ -13,6 +13,7 @@
 // @connect      api.github.com
 // @connect      gleitz.github.io
 // @connect      tonejs.github.io
+// @connect      cdn.jsdelivr.net
 // @run-at       document-start
 // ==/UserScript==
 

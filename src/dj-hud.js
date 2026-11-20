@@ -1047,8 +1047,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     }
     const libManifest = () => manifestP ||= Promise.resolve(opts.libBase ? opts.loadText(`${opts.libBase}sources.json`) : null)
       .then(t => (t ? JSON.parse(t) : null)).catch(() => { manifestP = null; return null; });
-    async function loadSong(t) {
-      if (t._song) return t._song;
+    async function gpBytes(t) {
       let bytes = null;
       if (t.gpFileId) {
         const blob = await idb.get(t.gpFileId).catch(() => null);
@@ -1057,6 +1056,11 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         const path = (await libManifest())?.[t.id.slice(4)];
         if (path) bytes = new Uint8Array(await opts.loadBinary(`${opts.libBase}${path}`));
       }
+      return bytes;
+    }
+    async function loadSong(t) {
+      if (t._song) return t._song;
+      const bytes = await gpBytes(t);
       if (!bytes) return null;
       const conv = await getConverterModule();
       if (typeof conv.songEvents !== 'function') return null;
@@ -1170,6 +1174,98 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       setTimeout(() => { try { s.out.disconnect(); s.comp.disconnect(); } catch { /* уже отключено */ } }, 300);
     }
 
+    // ---- alphaTab: готовый проигрыватель Guitar Pro ----
+    // alphaTab (MPL-2.0) сам читает GP3–GP8 со всей техникой и микшером (громкость, панорама, mute/solo) и синтезирует
+    // звук по SoundFont GeneralUser GS. Работаем без нот на экране и без воркеров: ScoreLoader → MidiFileGenerator →
+    // AlphaSynth.exportAudio, а куски PCM (стерео 48 кГц) сами ставим в Web Audio — так звук идёт и в колонки, и в трансляцию.
+    const AT_URL = 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.9.0/dist/alphaTab.min.js';
+    const AT_SF_URL = 'https://cdn.jsdelivr.net/gh/spessasus/SpessaSynth@6f7505087eba09bdbf345c97f5cf573fc547412e/soundfonts/GeneralUserGS.sf3';
+    let alphaTabP = null, atSoundFontP = null, atp = null;
+    const cached = async (key, load) => {
+      const hit = await idb.get(key).catch(() => null);
+      if (hit != null) return hit;
+      const value = await load();
+      idb.put(key, value).catch(() => {});
+      return value;
+    };
+    const getAlphaTab = () => alphaTabP ||= (async () => {
+      if (window.alphaTab?.synth?.AlphaSynth) return window.alphaTab;
+      const code = await cached('at:js:1.9.0', () => (opts.loadAlphaTab ? opts.loadAlphaTab(AT_URL) : opts.loadText(AT_URL)));
+      const AT = new Function(`${code}\n;return typeof alphaTab !== 'undefined' ? alphaTab : globalThis.alphaTab;`).call(globalThis);
+      if (!AT?.synth?.AlphaSynth) throw new Error('alphaTab не загрузился');
+      return AT;
+    })().catch(e => { alphaTabP = null; throw e; });
+    const getAtSoundFont = () => atSoundFontP ||= cached('at:sf:gugs', async () => {
+      if (!opts.loadBinary) throw new Error('нет загрузки банка');
+      return new Uint8Array(await opts.loadBinary(AT_SF_URL));
+    }).then(b => (b instanceof Uint8Array ? b : new Uint8Array(b))).catch(e => { atSoundFontP = null; throw e; });
+    async function alphaPrepare(t) {
+      const bytes = await gpBytes(t);
+      if (!bytes) return null;
+      const [AT, sf] = await Promise.all([getAlphaTab(), getAtSoundFont()]);
+      const settings = new AT.Settings();
+      const score = AT.importer.ScoreLoader.loadScoreFromBytes(bytes, settings);
+      const midi = new AT.midi.MidiFile();
+      const gen = new AT.midi.MidiFileGenerator(score, settings, new AT.midi.AlphaSynthMidiFileHandler(midi, true));
+      gen.generate();
+      return { AT, sf, midi, gen };
+    }
+    function alphaStart(t, prep) {
+      const { AT, sf, midi, gen } = prep;
+      const noop = () => {}, ev = { on: noop, off: noop };
+      // AlphaSynth требует вывод; мы им не пользуемся — звук забираем экспортом.
+      const stub = { sampleRate: 48000, open: noop, play: noop, destroy: noop, pause: noop, addSamples: noop, resetSamples: noop, activate: noop,
+        ready: ev, samplesPlayed: ev, sampleRequest: ev, enumerateOutputDevices: async () => [], setOutputDevice: async () => {} };
+      const options = new AT.synth.AudioExportOptions();
+      options.sampleRate = 48000;
+      options.soundFonts = [sf];
+      options.masterVolume = 1;
+      const exporter = new AT.synth.AlphaSynth(stub, 500).exportAudio(options, midi, gen.syncPoints || [], gen.transpositionPitches || new Map());
+      actx = graphCtx();
+      const out = actx.createGain(), comp = actx.createDynamicsCompressor();
+      out.gain.value = state.volume * 0.8;
+      comp.threshold.value = -6; comp.knee.value = 6; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.2;
+      out.connect(comp).connect(actx.destination);
+      comp.connect(mic.input());
+      const t0 = actx.currentTime + 0.15;
+      const s = { exporter, out, comp, t0, at: t0, nodes: new Set(), done: false, track: t };
+      s.timer = setInterval(() => alphaPump(s), 100);
+      atp = s;
+      alphaPump(s);
+      setStatus('playing');
+    }
+    function alphaPump(s) {
+      if (atp !== s) return;
+      // Рендер быстрый (10 с звука ≈ 40 мс), держим запас ~1.5 с.
+      while (!s.done && s.at - actx.currentTime < 1.5) {
+        const chunk = s.exporter.render(500);
+        if (!chunk) { s.done = true; break; }
+        durationMs = chunk.endTime;
+        const frames = chunk.samples.length >> 1;
+        if (!frames) continue;
+        const buf = actx.createBuffer(2, frames, 48000), l = buf.getChannelData(0), r = buf.getChannelData(1), x = chunk.samples;
+        for (let i = 0; i < frames; i++) { l[i] = x[2 * i]; r[i] = x[2 * i + 1]; }
+        const src = actx.createBufferSource();
+        src.buffer = buf;
+        src.connect(s.out);
+        src.start(s.at);
+        s.at += buf.duration;
+        s.nodes.add(src);
+        src.onended = () => { s.nodes.delete(src); src.disconnect(); };
+      }
+      if (s.done && actx.currentTime > s.at + 0.2) { alphaStop(); current = null; setStatus('idle'); }
+    }
+    function alphaStop() {
+      const s = atp;
+      if (!s) return;
+      atp = null;
+      clearInterval(s.timer);
+      for (const n of s.nodes) { try { n.stop(); } catch { /* уже закончился */ } }
+      s.nodes.clear();
+      s.out.gain.setTargetAtTime(0, actx.currentTime, 0.03);
+      setTimeout(() => { try { s.out.disconnect(); s.comp.disconnect(); } catch { /* уже отключено */ } }, 300);
+    }
+
     // ---- YouTube в трансляцию ----
     // Звук iframe YouTube странице недоступен (чужой источник), поэтому для трансляции два других пути:
     // 1) в клиенте FreakRating — его радио: yt-dlp + ffmpeg → PCM 48 кГц кусками (как радио бота, aiMic.radioFeed);
@@ -1268,6 +1364,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       ytStop();
       synthStop();
       gpStop();
+      alphaStop();
     }
     // Свои файлы (blob:) идут через Web Audio — их можно и слышать, и транслировать.
     // Чужие ссылки без CORS Web Audio не отдаст (будет тишина), поэтому они играют обычным <audio>.
@@ -1321,6 +1418,13 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
           return;
         }
         if (mode === 'records') {
+          // 1) alphaTab + GeneralUser GS; 2) свои семплы MusyngKite; 3) простой синтез.
+          let prep = null;
+          const slowAt = setTimeout(() => current === t && toast('Загружаю проигрыватель и инструменты…'), 900);
+          try { prep = await alphaPrepare(t); } catch (err) { console.warn('[FreakRating DJ] alphaTab', err); }
+          finally { clearTimeout(slowAt); }
+          if (current !== t) return;
+          if (prep) { alphaStart(t, prep); return; }
           let song = null;
           try { song = await loadSong(t); } catch (err) { console.warn('[FreakRating DJ] GP', err); }
           if (current !== t) return;
@@ -1372,6 +1476,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         if (graphGain) graphGain.gain.value = v;
         if (synth) synth.out.gain.setTargetAtTime(v, actx.currentTime, 0.03);
         if (gpp) gpp.out.gain.setTargetAtTime(v, actx.currentTime, 0.03);
+        if (atp) atp.out.gain.setTargetAtTime(v * 0.8, actx.currentTime, 0.03);
         if (radioGain) radioGain.gain.value = v;
         if (ytCapGain && ytMode === 'popup') ytCapGain.gain.value = v;
         ytPost('setVolume', [Math.round(v * 100)]);
@@ -1383,6 +1488,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         if (current?.type === 'digital' && audio) return audio.currentTime * 1000;
         if (synth) return Math.max(0, (actx.currentTime - synth.t0) * 1000);
         if (gpp) return Math.max(0, (actx.currentTime - gpp.t0) * 1000);
+        if (atp) return Math.max(0, (actx.currentTime - atp.t0) * 1000);
         if (!startedAt) return 0;
         const e = performance.now() - startedAt;
         return loop && durationMs ? e % durationMs : Math.min(e, durationMs || e);
