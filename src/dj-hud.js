@@ -359,7 +359,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .clipbtn img{width:24px;height:32px}
 .clipbtn:hover{transform:translateY(-3px) rotate(-6deg);transition:transform .15s;filter:drop-shadow(0 0 5px var(--ac))}
 .adding .clipbtn{transform:translateY(-3px) rotate(-6deg);filter:drop-shadow(0 0 5px var(--ac))}
-.keycap{position:absolute;left:84px;bottom:74px;z-index:7;width:46px;height:28px;display:none;animation:bob 1.6s ease-in-out infinite}
+.keycap{position:fixed;left:8px;bottom:150px;z-index:7;opacity:.85;width:46px;height:28px;display:none;animation:bob 1.6s ease-in-out infinite}
 .locked .keycap{display:block}
 .bubble{position:absolute;left:38px;bottom:66px;width:45px;height:42px;z-index:6;display:none;animation:bob 1s ease-in-out infinite}
 .waiting .bubble{display:block}
@@ -430,13 +430,14 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     <div class="table float">
       <div class="tt"><div class="mat"></div><div class="platter"><img alt=""></div><img class="arm" alt=""><img class="base" alt=""><i class="led"></i><span class="strip"><i></i></span></div>
       <div class="st"><img class="stand" alt=""><img class="sheet" alt=""><i class="head"></i></div>
-      <div class="tlabel"></div><img class="bubble" alt=""><img class="keycap" alt=""><div class="screen"></div><div class="notes"></div></div>
+      <div class="tlabel"></div><img class="bubble" alt=""><div class="screen"></div><div class="notes"></div></div>
     <div class="ctrls">
       <div class="modes"><button class="mode" data-mode="records" title="Пластинки"><img class="ic-vinyl" alt=""></button><button class="mode" data-mode="notes" title="Ноты — играть на гитаре в игре"><img class="ic-sheet" alt=""></button></div>
       <div class="audio"><button class="spk" title="Трансляция в войс-чат"><img alt=""></button><button class="micb" title="Твой микрофон"><img alt=""></button><button class="rgb" title="Ритм-игра"><img alt=""></button><input class="volr" type="range" min="0" max="100" step="1" aria-label="Громкость"></div>
     </div>
     <div class="toast"></div>
   </section>
+  <img class="keycap" alt="">
 </div>`;
   const $ = sel => root.querySelector(sel);
   const dj = $('.dj'), panel = $('.panel'), recordsEl = $('.records'), table = $('.table'), addbox = $('.addbox'), input = $('.addbox input');
