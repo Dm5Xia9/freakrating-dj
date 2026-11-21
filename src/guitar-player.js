@@ -25,13 +25,12 @@
   }
   let guitar;
   const findGuitar = () => window.__forestGuitar?.playing ? window.__forestGuitar : null;
-  const down = code => guitar.onKey(code);
-  const up = code => guitar.onKeyUp(code);
+  const up = key => guitar.onKeyUp(key);
   const wait = ms => new Promise(resolve => setTimeout(resolve, Math.max(0, ms)));
   const active = new Map(), activeChords = new Map();
   // События для HUD: waiting → playing({durationMs, loop}) → ended.
   const emit = (state, extra = {}) => { try { window.dispatchEvent(new CustomEvent('guitarplayer', {detail:{state, ...extra}})); } catch {} };
-  let serial = 0, octave = 1;
+  let serial = 0;
 
   const stop = () => {
     window.__stopSong = true;
@@ -46,40 +45,70 @@
   stop();
   await Promise.resolve(previous).catch(() => {});
 
-  const natural = [['KeyA',0],['KeyS',2],['KeyD',4],['KeyF',5],['KeyG',7],['KeyH',9],['KeyJ',11],['KeyK',12]];
+  // Гитара Forest (обновление ноя 2026): с клавиатуры только белые клавиши A S D F G H J (E4…D5),
+  // Shift — октава выше, Ctrl — ниже. Сам звук и сеть принимают любую ноту 40…86, поэтому ноты подаём
+  // прямо в гитару так же, как это делает её onKey (notes → sound.noteOn → queue), — с диезами.
+  // Если внутренности гитары поменяются, откатываемся на клавиши (диезы тогда округляются).
+  const LOW = 40, HIGH = 86;
   const pitch = note => {
-    const m = /^([A-G])([#b]?)([0-9])$/.exec(note);
+    const m = /^([A-G])([#b]?)(-?[0-9])$/.exec(note);
     if (!m) throw new Error(`Неверная нота: ${note}`);
     const semitone = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
     return 12 * (Number(m[3]) + 1) + semitone;
   };
-  const locate = (midi, from = octave) => {
-    const candidates = [];
-    for (let oct = 0; oct < 3; oct++) {
-      const offset = midi - (48 + 12 * oct);
-      for (const [code, step] of natural) {
-        if (offset === step) candidates.push({code, octave:oct, sharp:false});
-        if (offset === step + 1) candidates.push({code, octave:oct, sharp:true});
-      }
+  const fit = midi => { while (midi < LOW) midi += 12; while (midi > HIGH) midi -= 12; return midi; };
+  const direct = () => guitar?.notes instanceof Map && typeof guitar.sound?.noteOn === 'function' && typeof guitar.queue === 'function';
+  const WHITE = [['KeyA',64],['KeyS',65],['KeyD',67],['KeyF',69],['KeyG',71],['KeyH',72],['KeyJ',74]];
+  const viaKeys = midi => {
+    let best = null;
+    for (const [code, base] of WHITE) for (const [shift, ctrl, d] of [[false,false,0],[true,false,12],[false,true,-12]]) {
+      const dist = Math.abs(base + d - midi);
+      if (!best || dist < best.dist) best = {code, mods:{shift, ctrl}, dist};
     }
-    candidates.sort((a,b) => Math.abs(a.octave-from)-Math.abs(b.octave-from) || Number(a.sharp)-Number(b.sharp));
-    if (!candidates.length) throw new Error(`Нота вне диапазона клавиатуры гитары: ${midi}`);
-    return candidates[0];
+    return best;
   };
-  const setOctave = target => {
-    while (octave !== target) { down(target > octave ? 'BracketRight' : 'BracketLeft'); octave += target > octave ? 1 : -1; }
-  };
+  // Держим не больше 8 нот: при переполнении отпускаем самую старую.
+  const room = key => { if (active.size >= 8 && !active.has(key)) { const [old] = active.keys(); up(old); active.delete(old); } };
   const noteOn = (note, id) => {
-    const key = locate(pitch(note));
-    setOctave(key.octave);
-    if (active.has(key.code)) { up(key.code); active.delete(key.code); }
-    if (key.sharp) down('ShiftLeft');
-    down(key.code);
-    if (key.sharp) up('ShiftLeft');
-    active.set(key.code, id);
-    return key.code;
+    const midi = fit(pitch(note));
+    if (direct()) {
+      const key = `dj:${midi}`;
+      if (active.has(key)) { up(key); active.delete(key); }
+      room(key);
+      guitar.notes.set(key, midi);
+      guitar.sound.noteOn(midi);
+      guitar.kick = 1;
+      guitar.queue(midi, 3);
+      guitar.refreshHud?.();
+      active.set(key, id);
+      return key;
+    }
+    const k = viaKeys(midi);
+    if (active.has(k.code)) { up(k.code); active.delete(k.code); }
+    room(k.code);
+    guitar.onKey(k.code, k.mods);
+    active.set(k.code, id);
+    return k.code;
   };
-  const chordIndex={Am:1,C:2,G:3,Em:4,Dm:5,F:6,E:7,D:8};
+  // Аккорды: старые номера 1–8 из песен (Am C G Em Dm F E D) или имена вида Am, F#, C#m.
+  const CHORD_BY_NUM = ['Am','C','G','Em','Dm','F','E','D'];
+  const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const chordOf = chord => {
+    const name = typeof chord === 'number' ? CHORD_BY_NUM[chord - 1] : String(chord);
+    const m = /^([A-G])([#b]?)(m?)$/.exec(name || '');
+    if (!m) return null;
+    let root = NAMES.indexOf(m[1]) + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+    root = (root + 12) % 12;
+    return root + (m[3] ? 12 : 0);
+  };
+  const chordOn = (chord, id) => {
+    const n = chordOf(chord), key = 'dj:chord';
+    if (n === null || typeof guitar.strike !== 'function') return null;
+    if (activeChords.has(key)) { up(key); activeChords.delete(key); }
+    guitar.strike(key, n);
+    activeChords.set(key, id);
+    return key;
+  };
 
   // until (в долях) — не завершать раньше этой доли: ритм-игра доигрывает свои ноты сама через strike().
   const play = async (score, {bpm=120, loop=false, humanizeMs=4, until=0}={}) => {
@@ -92,9 +121,7 @@
     console.info('Жду гитару Forest: сними паузу и сядь за гитару.');
     while (!window.__stopSong && seek === serial && !(guitar = findGuitar())) await wait(300);
     if (window.__stopSong || seek !== serial) { emit('ended'); return; }
-    for (let i = 0; guitar.mode !== 'melody' && i < 3; i++) down('KeyR');
-    if (guitar.mode !== 'melody') throw new Error('Не удалось включить режим мелодии гитары.');
-    octave = guitar.octave;
+    for (let i = 0; guitar.mode !== 'melody' && i < 3; i++) guitar.onKey('KeyR');
     console.info('Гитара найдена, начинаю проигрывание.');
     const run = ++serial, beatMs = 60000 / bpm, actions = [];
     let noteId = 0;
@@ -107,8 +134,8 @@
         actions.push({at:at+dur, kind:'off', id});
       }
       if(e.chord){
-        const chord=typeof e.chord==='number'?e.chord:chordIndex[e.chord],at=Number(e.at),dur=Number(e.dur??1);
-        if(!Number.isInteger(chord)||chord<1||chord>8)throw new Error(`Неизвестный аккорд: ${e.chord}`);
+        const chord=e.chord,at=Number(e.at),dur=Number(e.dur??1);
+        if(chordOf(chord)===null)throw new Error(`Неизвестный аккорд: ${e.chord}`);
         const id=++noteId;
         actions.push({at,kind:'chordOn',chord,id},{at:at+dur,kind:'chordOff',id});
       }
@@ -131,13 +158,10 @@
             await wait(start + a.at*beatMs + jitter - performance.now());
             if (window.__stopSong || run !== serial) break;
             if (a.kind === 'on') {
-              // Гитара держит до 8 нот: при переполнении отпускаем самую старую, а не обрываем песню.
-              if (active.size >= 8 && !active.has(locate(pitch(a.note)).code)) { const [code] = active.keys(); up(code); active.delete(code); }
               ids.set(a.id, {code:noteOn(a.note, a.id),kind:'note'});
             } else if(a.kind==='chordOn'){
-              const code=`Digit${a.chord}`;
-              if(activeChords.has(code)){up(code);activeChords.delete(code)}
-              down(code);activeChords.set(code,a.id);ids.set(a.id,{code,kind:'chord'});
+              const code=chordOn(a.chord,a.id);
+              if(code)ids.set(a.id,{code,kind:'chord'});
             } else {
               const held = ids.get(a.id), code = held?.code;
               if (held?.kind==='note' && code && active.get(code) === a.id) { up(code); active.delete(code); }
@@ -199,8 +223,6 @@
     const id = `s${++strikeId}`, codes = [];
     for (const note of notes || []) {
       try {
-        const code = locate(pitch(note)).code;
-        if (active.size >= 8 && !active.has(code)) { const [old] = active.keys(); up(old); active.delete(old); }
         codes.push(noteOn(note, id));
       } catch { /* нота вне диапазона гитары */ }
     }
